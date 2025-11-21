@@ -1,0 +1,16 @@
+{
+  "short_name": "Absensi SMANSA PBB",
+  "name": "Sistem Absensi SMA Negeri 1 Pulau Banyak Barat",
+  "description": "A professional student attendance system for SMA Negeri 1 Pulau Banyak Barat using QR code integration.",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192 512x512"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#005A9E",
+  "background_color": "#F7FAFC"
+}

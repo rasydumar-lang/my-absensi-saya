@@ -1,0 +1,7 @@
+{
+  "name": "Sistem Absensi SMA Negeri 1 Pulau Banyak Barat",
+  "description": "A professional student attendance system for SMA Negeri 1 Pulau Banyak Barat using QR code integration. Features include admin login, student management, QR code generation, QR attendance scanning, and monthly attendance reports.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
