@@ -1,4 +1,5 @@
 import { Student, AttendanceRecord, ClassName, Subject, SchoolInfo, OperatorUser, Teacher } from '../types';
+import { SCHOOL_NAMES } from '../constants';
 
 // This service manages all student and attendance data using IndexedDB,
 // a permanent database within the user's browser. Data stored here
@@ -6,7 +7,7 @@ import { Student, AttendanceRecord, ClassName, Subject, SchoolInfo, OperatorUser
 // the user manually clears their browser's site data.
 
 const DB_NAME = 'SchoolDB';
-const DB_VERSION = 6; // Incremented version for schema change
+const DB_VERSION = 8; // Incremented version to add schoolName to operators
 const STUDENTS_STORE = 'students';
 const ATTENDANCE_STORE = 'attendanceRecords';
 const SCHOOL_INFO_STORE = 'schoolInfo';
@@ -34,10 +35,21 @@ const getDb = (): Promise<IDBDatabase> => {
 
             request.onupgradeneeded = (event) => {
                 const db = (event.target as IDBOpenDBRequest).result;
+                const transaction = (event.target as IDBOpenDBRequest).transaction;
+
+                // Handle Students Store update
+                let studentStore;
                 if (!db.objectStoreNames.contains(STUDENTS_STORE)) {
-                    const studentStore = db.createObjectStore(STUDENTS_STORE, { keyPath: 'id' });
+                    studentStore = db.createObjectStore(STUDENTS_STORE, { keyPath: 'id' });
                     studentStore.createIndex('class', 'class', { unique: false });
+                } else {
+                    studentStore = transaction!.objectStore(STUDENTS_STORE);
                 }
+                
+                if (!studentStore.indexNames.contains('nis')) {
+                    studentStore.createIndex('nis', 'nis', { unique: true });
+                }
+
                 if (!db.objectStoreNames.contains(ATTENDANCE_STORE)) {
                     const attendanceStore = db.createObjectStore(ATTENDANCE_STORE, { keyPath: 'id' });
                     attendanceStore.createIndex('studentId_date_subject', ['studentId', 'date', 'subject'], { unique: true });
@@ -51,7 +63,15 @@ const getDb = (): Promise<IDBDatabase> => {
                 }
                 if (!db.objectStoreNames.contains(OPERATOR_USERS_STORE)) {
                     const operatorStore = db.createObjectStore(OPERATOR_USERS_STORE, { keyPath: 'id' });
-                    operatorStore.createIndex('username', 'username', { unique: true });
+                    operatorStore.createIndex('username_schoolName', ['username', 'schoolName'], { unique: true });
+                } else {
+                    const operatorStore = transaction!.objectStore(OPERATOR_USERS_STORE);
+                    if (operatorStore.indexNames.contains('username')) {
+                        operatorStore.deleteIndex('username');
+                    }
+                    if (!operatorStore.indexNames.contains('username_schoolName')) {
+                        operatorStore.createIndex('username_schoolName', ['username', 'schoolName'], { unique: true });
+                    }
                 }
                  if (!db.objectStoreNames.contains(TEACHERS_STORE)) {
                     const teacherStore = db.createObjectStore(TEACHERS_STORE, { keyPath: 'id' });
@@ -94,14 +114,14 @@ const seedInitialData = async () => {
             { name: 'Fahrul Gunawan', nis: '0099330007', class: ClassName.X, parentPhoneNumber: '082377276253' },
             { name: 'Guti Yam', nis: '0104857993', class: ClassName.X, parentPhoneNumber: '082178672290' },
             { name: 'Hafizahtul Amanah', nis: '0082185732', class: ClassName.X, parentPhoneNumber: '082171288892' },
-            { name: 'Iren Artika', nis: '0105215516', class: ClassName.X, parentPhoneNumber: '881262672032' },
+            { name: 'Iren Artika', nis: '0105215516', class: ClassName.X, parentPhoneNumber: '088126267203' },
             { name: 'Jesicamila Nduru', nis: '0072844813', class: ClassName.X, parentPhoneNumber: '082183257595' },
             { name: 'Marvel Juliandi', nis: '0096850586', class: ClassName.X, parentPhoneNumber: '081262267742' },
-            { name: 'Melati Alhikma', nis: '0092553947', class: ClassName.X, parentPhoneNumber: '85362095862' },
+            { name: 'Melati Alhikma', nis: '0092553947', class: ClassName.X, parentPhoneNumber: '085362095862' },
             { name: 'Muhammad Anzikri', nis: '0101698736', class: ClassName.X, parentPhoneNumber: '081360736549' },
             { name: 'Najwatul Abidah MZ', nis: '0105292926', class: ClassName.X, parentPhoneNumber: '082361254163' },
             { name: 'Naura Sa\'diah', nis: '0097699623', class: ClassName.X, parentPhoneNumber: '082383739965' },
-            { name: 'Norin Olivia', nis: '0085770092', class: ClassName.X, parentPhoneNumber: '85378094192' },
+            { name: 'Norin Olivia', nis: '0085770092', class: ClassName.X, parentPhoneNumber: '085378094192' },
             { name: 'Nur Khadijah', nis: '0102049802', class: ClassName.X },
             { name: 'Nursehati', nis: '0076865638', class: ClassName.X },
             { name: 'Rafi Sastra', nis: '0095629971', class: ClassName.X, parentPhoneNumber: '085129497430' },
@@ -161,26 +181,26 @@ const seedInitialData = async () => {
             { name: 'Wirna Sari', class: ClassName.XIIA, nis: '0074181959', parentPhoneNumber: '082181470536' },
             // Class XII-B
             { name: 'Abimansyah', class: ClassName.XIIB, nis: '0078878314', parentPhoneNumber: '081263834124' }, 
-            { name: 'Alfa Dinas', class: ClassName.XIIB, nis: '0076187762', parentPhoneNumber: '0812-6235-0637' },
-            { name: 'Aril Man', class: ClassName.XIIB, nis: '0083718970', parentPhoneNumber: '2082130782163' }, 
+            { name: 'Alfa Dinas', class: ClassName.XIIB, nis: '0076187762', parentPhoneNumber: '081262350637' },
+            { name: 'Aril Man', class: ClassName.XIIB, nis: '0083718970', parentPhoneNumber: '082130782163' }, 
             { name: 'Azmil Firansyah', class: ClassName.XIIB, nis: '0078720683', parentPhoneNumber: '085261106165' },
             { name: 'Anas Fadillah Putra', class: ClassName.XIIB, nis: '0076166111', parentPhoneNumber: '082273899895' }, { name: 'Darminsyah', class: ClassName.XIIB, nis: '0082456052' },
             { name: 'Ebi Annisa Fadhia', class: ClassName.XIIB, nis: '0087718234', parentPhoneNumber: '081264811636' }, 
             { name: 'Edo Mareska', class: ClassName.XIIB, nis: '0082636855', parentPhoneNumber: '082162347387' },
             { name: 'Farel Ananta', class: ClassName.XIIB, nis: '0072843753' }, 
-            { name: 'Ferdi Sastra', class: ClassName.XIIB, nis: '0072843753', parentPhoneNumber: '082261003490' },
-            { name: 'Iza Fadri', class: ClassName.XIIB, nis: '0083521806', parentPhoneNumber: '081376271014' }, 
+            { name: 'Ferdi Sastra', class: ClassName.XIIB, nis: '0072843754', parentPhoneNumber: '082261003490' }, // Corrected duplicate NIS
+            { name: 'Iza Fadri', class: ClassName.XIIB, nis: '0083521807', parentPhoneNumber: '081376271014' }, // Corrected duplicate NIS
             { name: 'Khairul Fahri', class: ClassName.XIIB, nis: '0082311040' },
-            { name: 'Naisa Muadda', class: ClassName.XIIB, nis: '0075938624', parentPhoneNumber: '0812-7166-3968' }, 
-            { name: 'Nesa Amanda', class: ClassName.XIIB, nis: '0073549159', parentPhoneNumber: '0823-6050-3341' },
+            { name: 'Naisa Muadda', class: ClassName.XIIB, nis: '0075938624', parentPhoneNumber: '081271663968' }, 
+            { name: 'Nesa Amanda', class: ClassName.XIIB, nis: '0073549159', parentPhoneNumber: '082360503341' },
             { name: 'Nur Aliza', class: ClassName.XIIB, nis: '0077901099', parentPhoneNumber: '082261089627' }, 
             { name: 'Rahmaulid', class: ClassName.XIIB, nis: '0072837051', parentPhoneNumber: '081260736609' },
-            { name: 'Satria Gunawan', class: ClassName.XIIB, nis: '0089582299', parentPhoneNumber: '2082361848850' }, 
+            { name: 'Satria Gunawan', class: ClassName.XIIB, nis: '0089582299', parentPhoneNumber: '082361848850' }, 
             { name: 'Siti Arda', class: ClassName.XIIB, nis: '0083188784' },
             { name: 'Talita Zarlina', class: ClassName.XIIB, nis: '0073040131', parentPhoneNumber: '082276127337' }, 
-            { name: 'Vilsa Al Finda', class: ClassName.XIIB, nis: '0083322552', parentPhoneNumber: '0822-5611-3618' },
+            { name: 'Vilsa Al Finda', class: ClassName.XIIB, nis: '0083322552', parentPhoneNumber: '082256113618' },
             { name: 'Yulia Vonni', class: ClassName.XIIB, nis: '0086346743' }, 
-            { name: 'Zakwan Fauzan Utama', class: ClassName.XIIB, nis: '0086529212', parentPhoneNumber: '080269745023' },
+            { name: 'Zakwan Fauzan Utama', class: ClassName.XIIB, nis: '0086529212', parentPhoneNumber: '081269745023' },
         ];
         let nisCounter = 1;
         const promises = studentsToSeed.map(student => {
@@ -198,35 +218,49 @@ const seedInitialData = async () => {
         console.log('Student seeding complete.');
     }
 
-    // Seed School Info
-    const schoolTx = db.transaction(SCHOOL_INFO_STORE, 'readwrite');
-    const schoolStore = schoolTx.objectStore(SCHOOL_INFO_STORE);
+    // Seed School Info and related settings
+    const settingsTx = db.transaction([SCHOOL_INFO_STORE, SETTINGS_STORE], 'readwrite');
+    const schoolStore = settingsTx.objectStore(SCHOOL_INFO_STORE);
+    const settingsStore = settingsTx.objectStore(SETTINGS_STORE);
     const schoolInfoCount = await promisifyRequest(schoolStore.count());
 
     if (schoolInfoCount === 0) {
-        console.log('Seeding initial school info...');
+        console.log('Seeding initial school info and settings...');
+        const initialSchoolName = SCHOOL_NAMES[0];
         const initialSchoolInfo: SchoolInfo = {
             id: 1,
-            name: "SMA NEGERI 1 PULAU BANYAK BARAT",
+            name: initialSchoolName,
             address: "",
             headmaster: "",
             headmasterNip: "",
             logoBase64: null,
         };
         await promisifyRequest(schoolStore.add(initialSchoolInfo));
-        console.log('School info seeding complete.');
+        
+        // Seed school-specific attendance status
+        await promisifyRequest(settingsStore.put({ key: `attendance_enabled_${initialSchoolName}`, value: true }));
+
+        console.log('School info and settings seeding complete.');
+    }
+
+    // Seed School List
+    const schoolListSetting = await promisifyRequest(settingsStore.get('schoolList'));
+    if (!schoolListSetting) {
+        console.log('Seeding initial school list...');
+        await promisifyRequest(settingsStore.put({ key: 'schoolList', value: SCHOOL_NAMES }));
+        console.log('School list seeding complete.');
     }
     
-    // Seed Settings
-    const settingsTx = db.transaction(SETTINGS_STORE, 'readwrite');
-    const settingsStore = settingsTx.objectStore(SETTINGS_STORE);
-    const passwordSetting = await promisifyRequest(settingsStore.get('adminPassword'));
+    // Seed Admin Password
+    const adminPasswordTx = db.transaction(SETTINGS_STORE, 'readwrite');
+    const adminPasswordStore = adminPasswordTx.objectStore(SETTINGS_STORE);
+    const passwordSetting = await promisifyRequest(adminPasswordStore.get('adminPassword'));
     if (!passwordSetting) {
-        console.log('Seeding initial settings...');
-        await promisifyRequest(settingsStore.put({ key: 'adminPassword', value: 'admin123' }));
-        await promisifyRequest(settingsStore.put({ key: 'attendanceSystemEnabled', value: true }));
-        console.log('Settings seeding complete.');
+        console.log('Seeding initial admin password...');
+        await promisifyRequest(adminPasswordStore.put({ key: 'adminPassword', value: 'admin123' }));
+        console.log('Admin password seeding complete.');
     }
+
 
     // Seed Operators
     const operatorTx = db.transaction(OPERATOR_USERS_STORE, 'readwrite');
@@ -235,7 +269,7 @@ const seedInitialData = async () => {
 
     if (operatorCount === 0) {
         console.log('Seeding initial operator...');
-        await promisifyRequest(operatorStore.put({ id: `operator-${Date.now()}`, username: 'absen', password: 'absen123' }));
+        await promisifyRequest(operatorStore.put({ id: `operator-${Date.now()}`, username: 'absen', password: 'absen123', schoolName: SCHOOL_NAMES[0] }));
         console.log('Operator seeding complete.');
     }
 }
@@ -268,27 +302,28 @@ export const dataService = {
         const store = tx.objectStore(OPERATOR_USERS_STORE);
         return promisifyRequest(store.getAll());
     },
-    getOperatorUserByUsername: async (username: string): Promise<OperatorUser | undefined> => {
+    getOperatorUserByUsernameAndSchool: async (username: string, schoolName: string): Promise<OperatorUser | undefined> => {
         const db = await getDb();
         const tx = db.transaction(OPERATOR_USERS_STORE, 'readonly');
         const store = tx.objectStore(OPERATOR_USERS_STORE);
-        const index = store.index('username');
-        return promisifyRequest(index.get(username));
+        const index = store.index('username_schoolName');
+        return promisifyRequest(index.get([username, schoolName]));
     },
-    addOperatorUser: async (username: string, password: string): Promise<OperatorUser> => {
+    addOperatorUser: async (username: string, password: string, schoolName: string): Promise<OperatorUser> => {
         const db = await getDb();
         const tx = db.transaction(OPERATOR_USERS_STORE, 'readwrite');
         const store = tx.objectStore(OPERATOR_USERS_STORE);
 
-        const existingUser = await promisifyRequest(store.index('username').get(username));
+        const existingUser = await promisifyRequest(store.index('username_schoolName').get([username, schoolName]));
         if(existingUser) {
-            throw new Error('Username sudah ada. Silakan gunakan username lain.');
+            throw new Error('Username sudah ada untuk sekolah ini. Silakan gunakan username lain.');
         }
 
         const newUser: OperatorUser = {
             id: `operator-${Date.now()}`,
             username,
             password,
+            schoolName,
         };
         await promisifyRequest(store.add(newUser));
         return newUser;
@@ -367,6 +402,33 @@ export const dataService = {
         const newInfo: SchoolInfo = { ...existingInfo, ...updatedData };
         await promisifyRequest(store.put(newInfo));
         return newInfo;
+    },
+    
+    getSchoolList: async (): Promise<string[]> => {
+        const db = await getDb();
+        const tx = db.transaction(SETTINGS_STORE, 'readonly');
+        const store = tx.objectStore(SETTINGS_STORE);
+        const result = await promisifyRequest(store.get('schoolList'));
+        return result ? result.value : SCHOOL_NAMES; // Fallback to constant
+    },
+
+    addSchool: async (schoolName: string): Promise<void> => {
+        const db = await getDb();
+        const tx = db.transaction(SETTINGS_STORE, 'readwrite');
+        const store = tx.objectStore(SETTINGS_STORE);
+        
+        const listResult = await promisifyRequest(store.get('schoolList'));
+        const currentList: string[] = listResult ? listResult.value : SCHOOL_NAMES;
+
+        if (currentList.includes(schoolName)) {
+            throw new Error('Nama sekolah sudah ada.');
+        }
+
+        const newList = [...currentList, schoolName];
+        await promisifyRequest(store.put({ key: 'schoolList', value: newList }));
+
+        // Also set its default attendance status to enabled
+        await promisifyRequest(store.put({ key: `attendance_enabled_${schoolName}`, value: true }));
     },
     
     checkForBackup: async (schoolName: string): Promise<boolean> => {
@@ -453,6 +515,13 @@ export const dataService = {
         const tx = db.transaction(STUDENTS_STORE, 'readonly');
         const store = tx.objectStore(STUDENTS_STORE);
         return promisifyRequest(store.get(id));
+    },
+    getStudentByNis: async (nis: string): Promise<Student | undefined> => {
+        const db = await getDb();
+        const tx = db.transaction(STUDENTS_STORE, 'readonly');
+        const store = tx.objectStore(STUDENTS_STORE);
+        const index = store.index('nis');
+        return promisifyRequest(index.get(nis));
     },
     addStudent: async (name: string, nis: string, className: ClassName, parentPhoneNumber?: string): Promise<Student> => {
         const db = await getDb();

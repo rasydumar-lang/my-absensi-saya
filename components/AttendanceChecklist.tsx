@@ -1,9 +1,32 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { dataService } from '../services/dataService';
-import { Student, ClassName, Subject, AttendanceRecord } from '../types';
+import { Student, ClassName, Subject, AttendanceRecord, SchoolInfo } from '../types';
 import { CLASSES, SUBJECTS, SCHOOL_ATTENDANCE_SUBJECT } from '../constants';
 
 const ALL_SUBJECTS_KEY = "ALL_SUBJECTS";
+
+const formatPhoneNumber = (phone: string) => {
+    // 1. Remove spaces, dashes, parentheses etc. Keep digits and a potential leading '+'
+    let formatted = phone.trim().replace(/[\s-()]/g, '');
+
+    // 2. Handle the +62 prefix
+    if (formatted.startsWith('+62')) {
+        // Just remove the '+' and we are good
+        formatted = formatted.substring(1);
+    }
+    // 3. Handle the '0' prefix for local numbers
+    else if (formatted.startsWith('0')) {
+        formatted = '62' + formatted.substring(1);
+    }
+    // 4. Handle numbers that are missing the '0' but are otherwise valid (e.g., 812...)
+    // This is less safe but can correct common data entry errors. Indonesian numbers are 10-13 digits.
+    else if (formatted.startsWith('8') && formatted.length >= 9 && formatted.length <= 13) {
+         formatted = '62' + formatted;
+    }
+    
+    // 5. Final cleanup to ensure only digits remain.
+    return formatted.replace(/[^0-9]/g, '');
+}
 
 const AttendanceChecklist: React.FC = () => {
     const [students, setStudents] = useState<Student[]>([]);
@@ -11,10 +34,14 @@ const AttendanceChecklist: React.FC = () => {
     const [selectedClass, setSelectedClass] = useState<ClassName>(CLASSES[0]);
     const [selectedSubject, setSelectedSubject] = useState<Subject | typeof ALL_SUBJECTS_KEY>(SUBJECTS[0]);
     const [isLoading, setIsLoading] = useState(false);
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [sentNotifications, setSentNotifications] = useState<Set<string>>(new Set());
+    const [schoolInfo, setSchoolInfo] = useState<SchoolInfo | null>(null);
 
     useEffect(() => {
+        const getInfo = async () => {
+            const info = await dataService.getSchoolInfo();
+            if (info) setSchoolInfo(info);
+        };
+        getInfo();
         loadData();
     }, [selectedClass, selectedSubject]);
 
@@ -82,62 +109,41 @@ const AttendanceChecklist: React.FC = () => {
             setIsLoading(false);
         }
     };
-    
-    const formatPhoneNumber = (phone: string) => {
-      let formatted = phone.trim().replace(/[- ]/g, '');
-      if (formatted.startsWith('0')) {
-        formatted = '62' + formatted.substring(1);
-      } else if (formatted.startsWith('+62')) {
-        formatted = formatted.substring(1);
-      }
-      return formatted.replace(/[^0-9]/g, '');
-    }
 
-    const generateWhatsappUrl = (student: Student, record: AttendanceRecord) => {
-        if (!student.parentPhoneNumber) return null;
+    const generateWhatsappUrl = (student: Student): string | null => {
+        const record = attendance.get(student.id);
+        if (!record || !student.parentPhoneNumber || !schoolInfo) return null;
+
+        const date = new Date(record.date).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        let statusMessage = '';
         
-        const isCheckIn = record.checkIn && !record.checkOut;
-        const attendanceTypeMsg = isCheckIn ? 'Masuk' : 'Pulang';
-        const dateTime = new Date(isCheckIn ? record.checkIn! : record.checkOut!);
-        const time = dateTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-        const date = dateTime.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-
-        let statusText = '';
-        if (isCheckIn && record.timeliness) {
-            statusText = record.timeliness === 'on-time' ? '(Tepat Waktu)' : '(Terlambat)';
+        switch (record.status) {
+            case 'present':
+                if (record.checkOut) {
+                    const time = new Date(record.checkOut).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+                    statusMessage = `telah melakukan absensi *PULANG* pada:\n\nHari/Tanggal: ${date}\nPukul: ${time}`;
+                } else if (record.checkIn) {
+                    const time = new Date(record.checkIn).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+                    const timeliness = record.timeliness === 'late' ? '(Terlambat)' : '(Tepat Waktu)';
+                    statusMessage = `telah melakukan absensi *MASUK* pada:\n\nHari/Tanggal: ${date}\nPukul: ${time} ${timeliness}`;
+                }
+                break;
+            case 'sick':
+                statusMessage = `tercatat *SAKIT* pada hari ini, ${date}.`;
+                break;
+            case 'permission':
+                statusMessage = `tercatat *IZIN* pada hari ini, ${date}.`;
+                break;
         }
-        
-        const subjectLine = record.subject === SCHOOL_ATTENDANCE_SUBJECT ? '' : `Mata Pelajaran: *${record.subject}*\n`;
 
-        const message = `Pemberitahuan Absensi SMAN 1 Pulau Banyak Barat:\n\nSiswa *${student.name}* (Kelas *${student.class}*) telah melakukan absen *${attendanceTypeMsg}* pada ${date}, pukul ${time} ${statusText}.\n\nTerima kasih.`;
-        
+        const subjectInfo = record.subject !== SCHOOL_ATTENDANCE_SUBJECT && record.status === 'present'
+            ? `\nMata Pelajaran: *${record.subject}*`
+            : '';
+
+        const message = `Yth. Bapak/Ibu Wali Murid,\n\nDengan ini kami beritahukan bahwa ananda *${student.name}* (Kelas *${student.class}*) ${statusMessage}${subjectInfo}\n\nTerima kasih atas perhatiannya.\n*${schoolInfo.name}*`;
+
         const formattedPhone = formatPhoneNumber(student.parentPhoneNumber);
         return `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(message)}`;
-    }
-
-    const handleSendNotification = (student: Student, record: AttendanceRecord) => {
-        const url = generateWhatsappUrl(student, record);
-        if (url) {
-            window.open(url, '_blank', 'noopener,noreferrer');
-        }
-    };
-
-    const notifiableStudents = useMemo(() => {
-        return students.filter(student => {
-            const record = attendance.get(student.id);
-            return record && record.status === 'present' && student.parentPhoneNumber;
-        });
-    }, [students, attendance]);
-
-    const handleOpenMassalModal = () => {
-        if (notifiableStudents.length === 0) return;
-        setSentNotifications(new Set()); // Reset sent status when opening modal
-        setIsModalOpen(true);
-    };
-    
-    const handleSendFromModal = (student: Student, record: AttendanceRecord) => {
-        handleSendNotification(student, record);
-        setSentNotifications(prev => new Set(prev).add(student.id));
     };
 
     const getStatusComponent = (student: Student) => {
@@ -164,147 +170,86 @@ const AttendanceChecklist: React.FC = () => {
     };
     
     return (
-        <>
-            <div className="bg-white p-6 rounded-lg shadow-md">
-                <h2 className="text-2xl font-bold mb-4 text-gray-800">Notifikasi Absensi Harian</h2>
-                <p className="text-sm text-gray-600 mb-6">Pilih kelas dan mata pelajaran untuk melihat status absensi siswa hari ini dan kirim notifikasi WhatsApp ke orang tua.</p>
+        <div className="bg-white p-6 rounded-lg shadow-md">
+            <h2 className="text-2xl font-bold mb-4 text-gray-800">Daftar Hadir Harian</h2>
+            <p className="text-sm text-gray-600 mb-6">Pilih kelas dan mata pelajaran untuk memantau status absensi siswa secara langsung hari ini.</p>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6 items-end">
-                    <div>
-                        <label htmlFor="class-select" className="block text-sm font-medium text-gray-700">Pilih Kelas</label>
-                        <select
-                            id="class-select"
-                            value={selectedClass}
-                            onChange={(e) => setSelectedClass(e.target.value as ClassName)}
-                            className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue"
-                        >
-                            {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label htmlFor="subject-select" className="block text-sm font-medium text-gray-700">Pilih Mata Pelajaran</label>
-                        <select
-                            id="subject-select"
-                            value={selectedSubject}
-                            onChange={(e) => setSelectedSubject(e.target.value as Subject | typeof ALL_SUBJECTS_KEY)}
-                            className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue"
-                        >
-                            <option value={ALL_SUBJECTS_KEY}>Semua Mata Pelajaran</option>
-                            {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <button
-                            onClick={handleOpenMassalModal}
-                            disabled={notifiableStudents.length === 0}
-                            className="w-full bg-brand-blue text-white px-4 py-2 rounded-md hover:bg-brand-blue-dark transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-                            </svg>
-                            Kirim Notifikasi Massal ({notifiableStudents.length})
-                        </button>
-                    </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 items-end">
+                <div>
+                    <label htmlFor="class-select" className="block text-sm font-medium text-gray-700">Pilih Kelas</label>
+                    <select
+                        id="class-select"
+                        value={selectedClass}
+                        onChange={(e) => setSelectedClass(e.target.value as ClassName)}
+                        className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue"
+                    >
+                        {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
                 </div>
-
-                <div className="overflow-x-auto">
-                    <table className="min-w-full bg-white">
-                        <thead className="bg-gray-100">
-                            <tr>
-                                <th className="text-left py-3 px-4 uppercase font-semibold text-sm">No</th>
-                                <th className="text-left py-3 px-4 uppercase font-semibold text-sm">Nama Siswa</th>
-                                <th className="text-left py-3 px-4 uppercase font-semibold text-sm">NIS</th>
-                                <th className="text-left py-3 px-4 uppercase font-semibold text-sm">Status Absen (Hari Ini)</th>
-                                <th className="text-left py-3 px-4 uppercase font-semibold text-sm">Aksi</th>
-                            </tr>
-                        </thead>
-                        <tbody className="text-gray-700">
-                            {isLoading ? (
-                                <tr><td colSpan={5} className="text-center py-4">Memuat data...</td></tr>
-                            ) : students.length > 0 ? students.map((student, index) => {
-                                const record = attendance.get(student.id);
-                                const canNotify = record && record.status === 'present' && student.parentPhoneNumber;
-                                return (
-                                    <tr key={student.id} className="border-b hover:bg-gray-50">
-                                        <td className="py-3 px-4">{index + 1}</td>
-                                        <td className="py-3 px-4">{student.name}</td>
-                                        <td className="py-3 px-4">{student.nis}</td>
-                                        <td className="py-3 px-4">{getStatusComponent(student)}</td>
-                                        <td className="py-3 px-4">
-                                            {canNotify ? (
-                                                <button 
-                                                    onClick={() => handleSendNotification(student, record)}
-                                                    className="bg-green-500 text-white px-3 py-1 text-sm rounded hover:bg-green-600 transition-colors inline-flex items-center gap-1"
-                                                >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                                        <path d="M10.894 2.553a1 1 0 00-1.789 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
-                                                    </svg>
-                                                    Kirim Notifikasi
-                                                </button>
-                                            ) : (
-                                                <span className="text-xs text-gray-400">-</span>
-                                            )}
-                                        </td>
-                                    </tr>
-                                )
-                            }) : (
-                                <tr><td colSpan={5} className="text-center py-4 text-gray-500">Belum ada siswa di kelas ini.</td></tr>
-                            )}
-                        </tbody>
-                    </table>
+                <div>
+                    <label htmlFor="subject-select" className="block text-sm font-medium text-gray-700">Pilih Mata Pelajaran</label>
+                    <select
+                        id="subject-select"
+                        value={selectedSubject}
+                        onChange={(e) => setSelectedSubject(e.target.value as Subject | typeof ALL_SUBJECTS_KEY)}
+                        className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue"
+                    >
+                        <option value={ALL_SUBJECTS_KEY}>Semua Mata Pelajaran</option>
+                        {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
                 </div>
             </div>
 
-            {isModalOpen && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-                    <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
-                        <h3 className="text-xl font-semibold mb-4 text-gray-800">Kirim Notifikasi Massal</h3>
-                        <p className="text-sm text-gray-600 mb-4">
-                            Klik tombol "Kirim" untuk membuka tab WhatsApp untuk setiap siswa. Anda harus mengirim pesan secara manual di setiap tab.
-                            <span className="font-semibold"> ({sentNotifications.size} / {notifiableStudents.length} terkirim)</span>
-                        </p>
-                        <div className="overflow-y-auto border-t border-b py-2 flex-grow">
-                            <ul className="divide-y divide-gray-200">
-                                {notifiableStudents.map(student => {
-                                    const record = attendance.get(student.id)!;
-                                    const isSent = sentNotifications.has(student.id);
-                                    return (
-                                        <li key={student.id} className="py-3 flex items-center justify-between">
-                                            <div>
-                                                <p className="font-medium">{student.name}</p>
-                                                <p className="text-sm text-gray-500">{student.nis}</p>
-                                            </div>
-                                            <button
-                                                onClick={() => handleSendFromModal(student, record)}
-                                                disabled={isSent}
-                                                className={`px-4 py-2 text-sm rounded-md transition-colors inline-flex items-center gap-2 ${
-                                                    isSent
-                                                    ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
-                                                    : 'bg-green-500 text-white hover:bg-green-600'
-                                                }`}
+            <div className="overflow-x-auto">
+                <table className="min-w-full bg-white">
+                    <thead className="bg-gray-100">
+                        <tr>
+                            <th className="text-left py-3 px-4 uppercase font-semibold text-sm">No</th>
+                            <th className="text-left py-3 px-4 uppercase font-semibold text-sm">Nama Siswa</th>
+                            <th className="text-left py-3 px-4 uppercase font-semibold text-sm">NIS</th>
+                            <th className="text-left py-3 px-4 uppercase font-semibold text-sm">Status Absen (Hari Ini)</th>
+                            <th className="text-left py-3 px-4 uppercase font-semibold text-sm">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody className="text-gray-700">
+                        {isLoading ? (
+                            <tr><td colSpan={5} className="text-center py-4">Memuat data...</td></tr>
+                        ) : students.length > 0 ? students.map((student, index) => {
+                            const whatsappUrl = generateWhatsappUrl(student);
+
+                            return (
+                                <tr key={student.id} className="border-b hover:bg-gray-50">
+                                    <td className="py-3 px-4">{index + 1}</td>
+                                    <td className="py-3 px-4">{student.name}</td>
+                                    <td className="py-3 px-4">{student.nis}</td>
+                                    <td className="py-3 px-4">{getStatusComponent(student)}</td>
+                                    <td className="py-3 px-4">
+                                        {whatsappUrl ? (
+                                            <a 
+                                                href={whatsappUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="inline-flex items-center gap-1 bg-green-500 text-white px-3 py-1 text-xs rounded hover:bg-green-600 transition-colors"
+                                                title="Kirim notifikasi WhatsApp ke orang tua (membuka tab baru)"
                                             >
-                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                                    <path d="M10.894 2.553a1 1 0 00-1.789 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
-                                                 </svg>
-                                                {isSent ? 'Terkirim' : 'Kirim'}
-                                            </button>
-                                        </li>
-                                    );
-                                })}
-                            </ul>
-                        </div>
-                        <div className="mt-6 text-right flex-shrink-0">
-                            <button
-                                onClick={() => setIsModalOpen(false)}
-                                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300"
-                            >
-                                Tutup
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </>
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                  <path d="M10.894 2.553a1 1 0 00-1.789 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+                                                </svg>
+                                                <span>WA Ortu</span>
+                                            </a>
+                                        ) : (
+                                            <span className="text-xs text-gray-400">-</span>
+                                        )}
+                                    </td>
+                                </tr>
+                            );
+                        }) : (
+                            <tr><td colSpan={5} className="text-center py-4 text-gray-500">Belum ada siswa di kelas ini.</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </div>
     );
 };
 

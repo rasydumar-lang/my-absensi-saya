@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { dataService } from '../services/dataService';
 import { OperatorUser } from '../types';
@@ -41,21 +40,34 @@ const Settings: React.FC = () => {
     );
 };
 
-const GeneralSettings = () => {
+const GeneralSettings: React.FC = () => {
     const [oldPassword, setOldPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [passwordFeedback, setPasswordFeedback] = useState<Feedback | null>(null);
 
-    const [isAttendanceEnabled, setIsAttendanceEnabled] = useState<boolean>(true);
+    const [schoolList, setSchoolList] = useState<string[]>([]);
+    const [schoolStatuses, setSchoolStatuses] = useState<Map<string, boolean>>(new Map());
+    const [isLoadingStatuses, setIsLoadingStatuses] = useState<boolean>(true);
     const [statusFeedback, setStatusFeedback] = useState<Feedback | null>(null);
 
     useEffect(() => {
-        const fetchSettings = async () => {
-            const status = await dataService.getSetting<boolean>('attendanceSystemEnabled');
-            setIsAttendanceEnabled(status !== false); // Default to true if undefined
+        const fetchAllSettings = async () => {
+            setIsLoadingStatuses(true);
+            const schools = await dataService.getSchoolList();
+            setSchoolList(schools);
+            
+            const statuses = new Map<string, boolean>();
+            for (const schoolName of schools) {
+                const settingKey = `attendance_enabled_${schoolName}`;
+                const status = await dataService.getSetting<boolean>(settingKey);
+                // Default to true if setting is not found (undefined)
+                statuses.set(schoolName, status !== false);
+            }
+            setSchoolStatuses(statuses);
+            setIsLoadingStatuses(false);
         };
-        fetchSettings();
+        fetchAllSettings();
     }, []);
 
     const showFeedback = (setter: React.Dispatch<React.SetStateAction<Feedback | null>>, message: string, type: 'success' | 'error') => {
@@ -94,12 +106,15 @@ const GeneralSettings = () => {
         }
     };
 
-    const handleStatusToggle = async () => {
-        const newStatus = !isAttendanceEnabled;
+    const handleStatusToggle = async (schoolName: string) => {
+        const currentStatus = schoolStatuses.get(schoolName) !== false;
+        const newStatus = !currentStatus;
+        const settingKey = `attendance_enabled_${schoolName}`;
+
         try {
-            await dataService.updateSetting('attendanceSystemEnabled', newStatus);
-            setIsAttendanceEnabled(newStatus);
-            showFeedback(setStatusFeedback, `Sistem absensi berhasil di-${newStatus ? 'aktifkan' : 'nonaktifkan'}.`, 'success');
+            await dataService.updateSetting(settingKey, newStatus);
+            setSchoolStatuses(prev => new Map(prev).set(schoolName, newStatus));
+            showFeedback(setStatusFeedback, `Sistem absensi untuk "${schoolName}" berhasil di-${newStatus ? 'aktifkan' : 'nonaktifkan'}.`, 'success');
         } catch (error) {
             console.error(error);
             showFeedback(setStatusFeedback, 'Gagal mengubah status sistem.', 'error');
@@ -166,37 +181,44 @@ const GeneralSettings = () => {
                 </form>
             </div>
             <div className="bg-white p-6 rounded-lg shadow-md">
-                 <h2 className="text-xl font-bold mb-6 text-gray-800">Status Sistem Absensi</h2>
+                 <h2 className="text-xl font-bold mb-2 text-gray-800">Status Sistem Absensi per Sekolah</h2>
+                 <p className="text-sm text-gray-600 mb-6">Aktifkan atau nonaktifkan fitur scan QR code untuk setiap sekolah yang terdaftar.</p>
                  {statusFeedback && (
                     <div className={`p-4 mb-4 text-sm rounded-lg ${statusFeedback.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                         {statusFeedback.message}
                     </div>
                 )}
-                 <div className="flex items-center justify-between">
-                    <div>
-                        <h3 className="text-lg font-medium text-gray-900">Sistem Absensi</h3>
-                        <p className="mt-1 text-sm text-gray-500">
-                            Aktifkan atau nonaktifkan fitur scan QR code untuk Operator.
-                        </p>
+                 {isLoadingStatuses ? (
+                    <p className="text-gray-500">Memuat status sekolah...</p>
+                ) : (
+                    <div className="space-y-4">
+                        {schoolList.map(schoolName => {
+                            const isEnabled = schoolStatuses.get(schoolName) !== false;
+                            return (
+                                <div key={schoolName} className="flex items-center justify-between p-3 border rounded-md hover:bg-gray-50">
+                                    <span className="font-medium text-gray-900">{schoolName}</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleStatusToggle(schoolName)}
+                                        className={`${
+                                            isEnabled ? 'bg-brand-blue' : 'bg-gray-200'
+                                        } relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand-blue focus:ring-offset-2`}
+                                        role="switch"
+                                        aria-checked={isEnabled}
+                                    >
+                                        <span className="sr-only">Ubah status untuk {schoolName}</span>
+                                        <span
+                                            aria-hidden="true"
+                                            className={`${
+                                                isEnabled ? 'translate-x-5' : 'translate-x-0'
+                                            } pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`}
+                                        ></span>
+                                    </button>
+                                </div>
+                            );
+                        })}
                     </div>
-                    <button
-                        type="button"
-                        onClick={handleStatusToggle}
-                        className={`${
-                            isAttendanceEnabled ? 'bg-brand-blue' : 'bg-gray-200'
-                        } relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand-blue focus:ring-offset-2`}
-                        role="switch"
-                        aria-checked={isAttendanceEnabled}
-                    >
-                        <span className="sr-only">Use setting</span>
-                        <span
-                            aria-hidden="true"
-                            className={`${
-                                isAttendanceEnabled ? 'translate-x-5' : 'translate-x-0'
-                            } pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`}
-                        ></span>
-                    </button>
-                 </div>
+                )}
             </div>
         </div>
     );
@@ -208,14 +230,26 @@ const OperatorManagement = () => {
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [newUsername, setNewUsername] = useState('');
     const [newPassword, setNewPassword] = useState('');
+    const [schoolList, setSchoolList] = useState<string[]>([]);
+    const [selectedSchool, setSelectedSchool] = useState<string>('');
+
 
     useEffect(() => {
         loadOperators();
+        loadSchoolList();
     }, []);
 
     const loadOperators = async () => {
         const users = await dataService.getOperatorUsers();
         setOperators(users);
+    };
+
+    const loadSchoolList = async () => {
+        const schools = await dataService.getSchoolList();
+        setSchoolList(schools);
+        if (schools.length > 0) {
+            setSelectedSchool(schools[0]);
+        }
     };
 
     const showFeedback = (message: string, type: 'success' | 'error') => {
@@ -233,8 +267,12 @@ const OperatorManagement = () => {
             showFeedback('Password minimal harus 6 karakter.', 'error');
             return;
         }
+        if (selectedSchool === '') {
+            showFeedback('Anda harus memilih sekolah.', 'error');
+            return;
+        }
         try {
-            await dataService.addOperatorUser(newUsername, newPassword);
+            await dataService.addOperatorUser(newUsername, newPassword, selectedSchool);
             showFeedback('Operator berhasil ditambahkan!', 'success');
             setIsAddModalOpen(false);
             setNewUsername('');
@@ -278,6 +316,7 @@ const OperatorManagement = () => {
                     <thead className="bg-gray-100">
                         <tr>
                             <th className="text-left py-3 px-4 uppercase font-semibold text-sm">Username</th>
+                            <th className="text-left py-3 px-4 uppercase font-semibold text-sm">Sekolah</th>
                             <th className="text-left py-3 px-4 uppercase font-semibold text-sm">Aksi</th>
                         </tr>
                     </thead>
@@ -285,6 +324,7 @@ const OperatorManagement = () => {
                         {operators.map(op => (
                             <tr key={op.id} className="border-b">
                                 <td className="py-3 px-4">{op.username}</td>
+                                <td className="py-3 px-4">{op.schoolName}</td>
                                 <td className="py-3 px-4 flex gap-2">
                                      <button disabled className="bg-yellow-300 text-white px-3 py-1 text-sm rounded cursor-not-allowed" title="Segera Hadir">
                                         Ubah Password
@@ -305,6 +345,20 @@ const OperatorManagement = () => {
                     <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
                         <h3 className="text-xl font-semibold mb-4 text-gray-800">Tambah Operator Baru</h3>
                         <form onSubmit={handleAddOperator}>
+                             <div className="mb-4">
+                                <label htmlFor="schoolName" className="block text-sm font-medium text-gray-700">Sekolah</label>
+                                <select
+                                    id="schoolName"
+                                    value={selectedSchool}
+                                    onChange={e => setSelectedSchool(e.target.value)}
+                                    className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue"
+                                    required
+                                >
+                                    {schoolList.map(school => (
+                                        <option key={school} value={school}>{school}</option>
+                                    ))}
+                                </select>
+                            </div>
                             <div className="mb-4">
                                 <label htmlFor="newUsername" className="block text-sm font-medium text-gray-700">Username</label>
                                 <input

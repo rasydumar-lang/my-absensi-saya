@@ -8,7 +8,8 @@ import SchoolData from './SchoolData';
 import AttendanceChecklist from './AttendanceChecklist';
 import Settings from './Settings';
 import TeacherManagement from './TeacherManagement';
-import { AcademicCapIcon, ArrowLeftOnRectangleIcon, BellAlertIcon, BuildingOfficeIcon, Cog6ToothIcon, DocumentChartBarIcon, HomeIcon, QrCodeIcon, UserGroupIcon } from './icons';
+import ManualAttendance from './ManualAttendance';
+import { AcademicCapIcon, ArrowLeftOnRectangleIcon, ClipboardDocumentCheckIcon, BuildingOfficeIcon, Cog6ToothIcon, DocumentChartBarIcon, HomeIcon, QrCodeIcon, UserGroupIcon, PencilSquareIcon } from './icons';
 
 interface DashboardProps {
   userType: UserType;
@@ -21,7 +22,7 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ userType, currentPage, setCurrentPage, onLogout, schoolInfo, refreshSchoolInfo }) => {
   const adminPages: Page[] = ['dashboard', 'school', 'settings', 'teachers'];
-  const operatorPages: Page[] = ['dashboard', 'scanner', 'checklist', 'students', 'report', 'school', 'teachers'];
+  const operatorPages: Page[] = ['dashboard', 'scanner', 'manual', 'checklist', 'students', 'report', 'school', 'teachers'];
   
   // If current page is not allowed for the user type, redirect to their dashboard.
   useEffect(() => {
@@ -49,7 +50,9 @@ const Dashboard: React.FC<DashboardProps> = ({ userType, currentPage, setCurrent
     } else { // operator
          switch (currentPage) {
             case 'scanner':
-                return <AttendanceScanner />;
+                return <AttendanceScanner schoolInfo={schoolInfo} />;
+            case 'manual':
+                return <ManualAttendance schoolInfo={schoolInfo} />;
             case 'students':
                 return <StudentManagement />;
             case 'report':
@@ -109,7 +112,8 @@ const Dashboard: React.FC<DashboardProps> = ({ userType, currentPage, setCurrent
                  <>
                     <NavLink page="dashboard" icon={<HomeIcon className="w-6 h-6"/>}>Dashboard</NavLink>
                     <NavLink page="scanner" icon={<QrCodeIcon className="w-6 h-6"/>}>Scan Absen</NavLink>
-                    <NavLink page="checklist" icon={<BellAlertIcon className="w-6 h-6"/>}>Notifikasi Absen</NavLink>
+                    <NavLink page="manual" icon={<PencilSquareIcon className="w-6 h-6"/>}>Absen Manual</NavLink>
+                    <NavLink page="checklist" icon={<ClipboardDocumentCheckIcon className="w-6 h-6"/>}>Daftar Hadir Harian</NavLink>
                     <NavLink page="students" icon={<UserGroupIcon className="w-6 h-6"/>}>Manajemen Siswa</NavLink>
                     <NavLink page="teachers" icon={<AcademicCapIcon className="w-6 h-6"/>}>Data Guru</NavLink>
                     <NavLink page="report" icon={<DocumentChartBarIcon className="w-6 h-6"/>}>Laporan Absensi</NavLink>
@@ -175,7 +179,7 @@ const AdminDashboardHome: React.FC<{setCurrentPage: (page: Page) => void}> = ({s
                     <BuildingOfficeIcon className="w-12 h-12 text-yellow-500" />
                     <div className="ml-4">
                         <h3 className="text-xl font-semibold text-gray-800">Data Sekolah</h3>
-                        <p className="text-gray-500">Kelola informasi dan logo sekolah Anda.</p>
+                        <p className="text-gray-500">Pilih sekolah aktif & kelola informasi detailnya.</p>
                     </div>
                 </div>
             </div>
@@ -205,12 +209,21 @@ const OperatorDashboardHome: React.FC<{setCurrentPage: (page: Page) => void}> = 
                     </div>
                 </div>
             </div>
+            <div onClick={() => setCurrentPage('manual')} className="bg-white p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer">
+                <div className="flex items-center">
+                    <PencilSquareIcon className="w-12 h-12 text-indigo-500" />
+                    <div className="ml-4">
+                        <h3 className="text-xl font-semibold text-gray-800">Absen Manual (NIS)</h3>
+                        <p className="text-gray-500">Catat kehadiran siswa secara manual via NIS.</p>
+                    </div>
+                </div>
+            </div>
             <div onClick={() => setCurrentPage('checklist')} className="bg-white p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer">
                 <div className="flex items-center">
-                    <BellAlertIcon className="w-12 h-12 text-blue-500" />
+                    <ClipboardDocumentCheckIcon className="w-12 h-12 text-teal-500" />
                     <div className="ml-4">
-                        <h3 className="text-xl font-semibold text-gray-800">Notifikasi Absen</h3>
-                        <p className="text-gray-500">Kirim notifikasi WA ke orang tua siswa.</p>
+                        <h3 className="text-xl font-semibold text-gray-800">Daftar Hadir Harian</h3>
+                        <p className="text-gray-500">Lihat status kehadiran siswa pada hari ini.</p>
                     </div>
                 </div>
             </div>

@@ -74,7 +74,7 @@ const StudentManagement: React.FC = () => {
     };
 
     const downloadQRCode = (student: Student) => {
-        const qrData: QrData = { studentId: student.id, name: student.name };
+        const qrData: QrData = { nis: student.nis };
         QRCode.toDataURL(JSON.stringify(qrData), { width: 300, margin: 2 }, (err, url) => {
             if (err) {
                 console.error(err);

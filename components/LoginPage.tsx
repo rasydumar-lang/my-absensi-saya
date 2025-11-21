@@ -31,12 +31,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, schoolInfo }) => {
     } else {
         // Operator Login Check
         try {
-            const operator = await dataService.getOperatorUserByUsername(username);
+            const operator = await dataService.getOperatorUserByUsernameAndSchool(username, schoolInfo.name);
             if (operator && password === operator.password) {
                  setError('');
                  onLogin('operator');
             } else {
-                setError('Username atau password salah.');
+                setError('Username atau password salah untuk sekolah ini.');
             }
         } catch (err) {
             setError('Terjadi kesalahan saat login.');
@@ -96,6 +96,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, schoolInfo }) => {
             </button>
           </div>
         </form>
+        <p className="text-center text-xs text-gray-500 mt-8">
+          Aplikasi ini dibuat guru SMA Negeri 1 Pulau Banyak Barat, Bapak Syafriadi, S.Pd.Gr untuk membantu guru dan sekolah dalam memberikan kenyaman pada siswa.
+        </p>
       </div>
     </div>
   );

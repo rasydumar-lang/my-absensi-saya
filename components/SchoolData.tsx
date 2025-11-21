@@ -12,17 +12,27 @@ const SchoolData: React.FC<SchoolDataProps> = ({ schoolInfo, onDataUpdated }) =>
     const [feedback, setFeedback] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
     const [logoPreview, setLogoPreview] = useState<string | null>(schoolInfo.logoBase64);
     
+    const [schoolList, setSchoolList] = useState<string[]>([]);
+    const [isAddSchoolModalOpen, setIsAddSchoolModalOpen] = useState(false);
+    const [newSchoolName, setNewSchoolName] = useState('');
+
     const [isResetModalOpen, setIsResetModalOpen] = useState(false);
     const [resetConfirmationText, setResetConfirmationText] = useState('');
     
     const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
 
+    const fetchSchoolList = async () => {
+        const list = await dataService.getSchoolList();
+        setSchoolList(list);
+    };
+
     useEffect(() => {
+        fetchSchoolList();
         setFormData(schoolInfo);
         setLogoPreview(schoolInfo.logoBase64);
     }, [schoolInfo]);
 
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
     };
@@ -40,6 +50,7 @@ const SchoolData: React.FC<SchoolDataProps> = ({ schoolInfo, onDataUpdated }) =>
                 setFormData(prev => ({ ...prev, logoBase64: base64String }));
                 setLogoPreview(base64String);
             };
+            // FIX: Corrected method name from readDataURL to readAsDataURL.
             reader.readAsDataURL(file);
         }
     };
@@ -113,10 +124,38 @@ const SchoolData: React.FC<SchoolDataProps> = ({ schoolInfo, onDataUpdated }) =>
         }
     };
 
+    const handleAddNewSchool = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (newSchoolName.trim() === '') return;
+        try {
+            await dataService.addSchool(newSchoolName.trim().toUpperCase());
+            setFeedback({ message: 'Sekolah baru berhasil ditambahkan!', type: 'success' });
+            await fetchSchoolList();
+            setIsAddSchoolModalOpen(false);
+            setNewSchoolName('');
+        } catch (error: any) {
+            setFeedback({ message: error.message || 'Gagal menambahkan sekolah.', type: 'error' });
+        } finally {
+            setTimeout(() => setFeedback(null), 3000);
+        }
+    };
+
     return (
         <>
             <div className="bg-white p-6 rounded-lg shadow-md max-w-2xl mx-auto">
-                <h2 className="text-2xl font-bold mb-6 text-gray-800">Data Sekolah</h2>
+                 <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-2xl font-bold text-gray-800">Data Sekolah</h2>
+                    <button 
+                        type="button" 
+                        onClick={() => setIsAddSchoolModalOpen(true)}
+                        className="inline-flex items-center gap-2 px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                        </svg>
+                        Tambah Sekolah
+                    </button>
+                </div>
 
                 {feedback && (
                     <div className={`p-4 mb-4 text-sm rounded-lg ${feedback.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
@@ -127,15 +166,21 @@ const SchoolData: React.FC<SchoolDataProps> = ({ schoolInfo, onDataUpdated }) =>
                 <form onSubmit={handleSubmit} className="space-y-6">
                     <div>
                         <label htmlFor="name" className="block text-sm font-medium text-gray-700">Nama Sekolah</label>
-                        <input
-                            type="text"
+                        <select
                             name="name"
                             id="name"
                             value={formData.name}
                             onChange={handleInputChange}
                             className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue"
                             required
-                        />
+                        >
+                            {schoolList.map(schoolName => (
+                                <option key={schoolName} value={schoolName}>{schoolName}</option>
+                            ))}
+                        </select>
+                         <p className="mt-2 text-sm text-gray-500">
+                           Mengganti sekolah akan mencadangkan data siswa & guru saat ini, dan memuat data untuk sekolah baru (jika ada).
+                        </p>
                     </div>
                     <div>
                         <label htmlFor="address" className="block text-sm font-medium text-gray-700">Alamat Sekolah</label>
@@ -209,6 +254,36 @@ const SchoolData: React.FC<SchoolDataProps> = ({ schoolInfo, onDataUpdated }) =>
                     </div>
                 </form>
             </div>
+            
+            {isAddSchoolModalOpen && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50">
+                    <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
+                        <h3 className="text-xl font-semibold mb-4 text-gray-800">Tambah Sekolah Baru</h3>
+                        <form onSubmit={handleAddNewSchool}>
+                            <div className="mb-4">
+                                <label htmlFor="newSchoolName" className="block text-sm font-medium text-gray-700">Nama Sekolah</label>
+                                <input
+                                    id="newSchoolName"
+                                    type="text"
+                                    value={newSchoolName}
+                                    onChange={e => setNewSchoolName(e.target.value)}
+                                    className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue"
+                                    required
+                                    placeholder="Contoh: SMAN 2 PULAU BANYAK"
+                                />
+                            </div>
+                            <div className="flex justify-end gap-4">
+                                <button type="button" onClick={() => setIsAddSchoolModalOpen(false)} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">
+                                    Batal
+                                </button>
+                                <button type="submit" className="px-4 py-2 bg-brand-blue text-white rounded-md hover:bg-brand-blue-dark">
+                                    Simpan
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
             
             {isResetModalOpen && (
                 <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50" aria-modal="true" role="dialog">

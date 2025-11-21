@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { dataService } from '../services/dataService';
-import { Subject, QrData, Student } from '../types';
+import { Subject, QrData, Student, SchoolInfo } from '../types';
 import { SUBJECTS, SCHOOL_ATTENDANCE_SUBJECT } from '../constants';
 declare var Html5Qrcode: any;
 
@@ -16,7 +15,11 @@ interface Feedback {
     whatsappUrl?: string;
 }
 
-const AttendanceScanner: React.FC = () => {
+interface AttendanceScannerProps {
+    schoolInfo: SchoolInfo;
+}
+
+const AttendanceScanner: React.FC<AttendanceScannerProps> = ({ schoolInfo }) => {
     const REGULAR_SUBJECTS = SUBJECTS.filter(s => s !== SCHOOL_ATTENDANCE_SUBJECT);
 
     const [attendanceType, setAttendanceType] = useState<'subject' | 'school'>('subject');
@@ -35,17 +38,20 @@ const AttendanceScanner: React.FC = () => {
     const [selectedSemester, setSelectedSemester] = useState<'Ganjil' | 'Genap'>('Ganjil');
     const [isScanning, setIsScanning] = useState(false);
     const [isSystemEnabled, setIsSystemEnabled] = useState<boolean | null>(null);
+    const [cameraError, setCameraError] = useState<string | null>(null);
     
     const html5QrCodeRef = useRef<any>(null);
-    const restartTimeoutRef = useRef<number | null>(null);
+    const readerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
       const checkSystemStatus = async () => {
-        const status = await dataService.getSetting<boolean>('attendanceSystemEnabled');
-        setIsSystemEnabled(status !== false); // Default to true if undefined
+        const settingKey = `attendance_enabled_${schoolInfo.name}`;
+        const status = await dataService.getSetting<boolean>(settingKey);
+        // Default to true if setting is not found (undefined)
+        setIsSystemEnabled(status !== false);
       };
       checkSystemStatus();
-    }, []);
+    }, [schoolInfo]);
 
     const speak = (text: string) => {
         if ('speechSynthesis' in window) {
@@ -58,19 +64,8 @@ const AttendanceScanner: React.FC = () => {
             console.warn('Text-to-speech not supported in this browser.');
         }
     };
-    
-    const clearRestartTimeout = () => {
-        if (restartTimeoutRef.current) {
-            clearTimeout(restartTimeoutRef.current);
-            restartTimeoutRef.current = null;
-        }
-    };
 
-    const stopScanner = (isManualStop: boolean = false) => {
-        if (isManualStop) {
-            clearRestartTimeout();
-        }
-
+    const stopScanner = () => {
         if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
             html5QrCodeRef.current.stop().then(() => {
                 setIsScanning(false);
@@ -84,23 +79,31 @@ const AttendanceScanner: React.FC = () => {
     };
 
     const startScanner = () => {
-        clearRestartTimeout();
         setFeedback(null);
+        setCameraError(null);
         setIsScanning(true);
 
         const qrCodeSuccessCallback = (decodedText: string, decodedResult: any) => {
-            stopScanner(false); // Stop scanner after scan, but it's not a manual stop
+            stopScanner(); // Stop scanner after a successful scan
             handleScan(decodedText);
         };
-        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+        const config = { fps: 10, qrbox: { width: 250, height: 250 }, rememberLastUsedCamera: true };
+        
+        // Ensure the reader element is clean before starting
+        if (readerRef.current) {
+            readerRef.current.innerHTML = "";
+        }
         
         const scannerInstance = new Html5Qrcode("reader");
         html5QrCodeRef.current = scannerInstance;
 
         scannerInstance.start({ facingMode: "environment" }, config, qrCodeSuccessCallback)
             .catch((err: any) => {
-                const errorMessage = `Gagal memulai kamera: ${err}`;
-                setFeedback({ message: errorMessage, type: 'error' });
+                let errorMessage = `Gagal memulai kamera. Pastikan Anda telah memberikan izin akses kamera di browser.`;
+                if (err.name === "NotAllowedError") {
+                    errorMessage = "Akses kamera ditolak. Mohon izinkan akses kamera di pengaturan browser Anda untuk melanjutkan.";
+                }
+                setCameraError(errorMessage);
                 speak("Gagal memulai kamera");
                 setIsScanning(false);
             });
@@ -109,10 +112,7 @@ const AttendanceScanner: React.FC = () => {
     useEffect(() => {
         // Cleanup function on component unmount
         return () => {
-            if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
-                html5QrCodeRef.current.stop().catch((err: any) => console.log("Cleanup stop failed", err));
-            }
-             clearRestartTimeout();
+             stopScanner();
              if ('speechSynthesis' in window) {
                 window.speechSynthesis.cancel();
             }
@@ -120,25 +120,38 @@ const AttendanceScanner: React.FC = () => {
     }, []);
     
     const formatPhoneNumber = (phone: string) => {
-      let formatted = phone.trim().replace(/[- ]/g, ''); // remove spaces and dashes
-      if (formatted.startsWith('0')) {
-        formatted = '62' + formatted.substring(1); // replace leading 0 with 62
-      } else if (formatted.startsWith('+62')) {
-        formatted = formatted.substring(1); // remove +
-      }
-      return formatted.replace(/[^0-9]/g, ''); // Ensure only digits remain
+        // 1. Remove spaces, dashes, parentheses etc. Keep digits and a potential leading '+'
+        let formatted = phone.trim().replace(/[\s-()]/g, '');
+    
+        // 2. Handle the +62 prefix
+        if (formatted.startsWith('+62')) {
+            // Just remove the '+' and we are good
+            formatted = formatted.substring(1);
+        }
+        // 3. Handle the '0' prefix for local numbers
+        else if (formatted.startsWith('0')) {
+            formatted = '62' + formatted.substring(1);
+        }
+        // 4. Handle numbers that are missing the '0' but are otherwise valid (e.g., 812...)
+        // This is less safe but can correct common data entry errors. Indonesian numbers are 10-13 digits.
+        else if (formatted.startsWith('8') && formatted.length >= 9 && formatted.length <= 13) {
+             formatted = '62' + formatted;
+        }
+        
+        // 5. Final cleanup to ensure only digits remain.
+        return formatted.replace(/[^0-9]/g, '');
     }
 
     const handleScan = async (data: string) => {
         try {
             const qrData: QrData = JSON.parse(data);
-            if (!qrData.studentId) {
-                throw new Error("QR Code tidak valid.");
+            if (!qrData.nis) {
+                throw new Error("QR Code tidak valid atau format lama.");
             }
 
-            const student = await dataService.getStudentById(qrData.studentId);
+            const student = await dataService.getStudentByNis(qrData.nis);
             if (!student) {
-                throw new Error("Siswa tidak ditemukan.");
+                throw new Error("Siswa tidak ditemukan. Pastikan data siswa (terutama NIS) sudah ditambahkan di perangkat ini.");
             }
             
             const attendanceDateTime = new Date(`${selectedDate}T${selectedTime}:00`);
@@ -173,17 +186,19 @@ const AttendanceScanner: React.FC = () => {
             const successMessage = `Absen ${result.type === 'check-in' ? 'Masuk' : 'Pulang'} Berhasil!`;
             
             let whatsappUrl: string | undefined = undefined;
-            if(student.parentPhoneNumber) {
-                const attendanceTypeMsg = result.type === 'check-in' ? 'Masuk' : 'Pulang';
+            if (student.parentPhoneNumber) {
+                const attendanceTypeMsg = result.type === 'check-in' ? 'MASUK' : 'PULANG';
                 let statusText = '';
                 if (result.type === 'check-in') {
                     statusText = timelinessStatus === 'on-time' ? '(Tepat Waktu)' : '(Terlambat)';
                 }
-                
-                const subjectLine = result.record.subject === SCHOOL_ATTENDANCE_SUBJECT ? '' : `Mata Pelajaran: *${result.record.subject}*\n`;
-        
-                const message = `Pemberitahuan Absensi SMAN 1 Pulau Banyak Barat:\n\nSiswa *${student.name}* (Kelas *${student.class}*) telah melakukan absen *${attendanceTypeMsg}* pada ${date}, pukul ${time} ${statusText}.\n\nTerima kasih.`;
-                
+
+                const subjectInfo = subjectToRecord !== SCHOOL_ATTENDANCE_SUBJECT 
+                    ? `\nMata Pelajaran: *${subjectToRecord}*`
+                    : '';
+
+                const message = `Yth. Bapak/Ibu Wali Murid,\n\nDengan ini kami beritahukan bahwa ananda *${student.name}* (Kelas *${student.class}*) telah melakukan absensi *${attendanceTypeMsg}* pada:\n\nHari/Tanggal: ${date}\nPukul: ${time} ${statusText}${subjectInfo}\n\nTerima kasih atas perhatiannya.\n*${schoolInfo.name}*`;
+
                 const formattedPhone = formatPhoneNumber(student.parentPhoneNumber);
                 whatsappUrl = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(message)}`;
             }
@@ -204,11 +219,6 @@ const AttendanceScanner: React.FC = () => {
             setFeedback({ message: errorMessage, type: 'error' });
             speak(`Gagal. ${errorMessage}`);
         }
-
-        // Schedule a restart of the scanner after 5 seconds to allow time for WA notification
-        restartTimeoutRef.current = window.setTimeout(() => {
-            startScanner();
-        }, 5000);
     };
 
     if (isSystemEnabled === null) {
@@ -223,7 +233,7 @@ const AttendanceScanner: React.FC = () => {
         return (
             <div className="bg-white p-6 rounded-lg shadow-md text-center">
                 <h2 className="text-2xl font-bold mb-4 text-gray-800">Sistem Absensi Dinonaktifkan</h2>
-                <p className="text-gray-600">Fitur scan absensi saat ini sedang dimatikan oleh admin. Silakan aktifkan kembali di menu Pengaturan.</p>
+                <p className="text-gray-600">Fitur scan absensi untuk <strong className="font-semibold">{schoolInfo.name}</strong> saat ini sedang dimatikan oleh admin. Silakan aktifkan kembali di menu Pengaturan.</p>
             </div>
         );
     }
@@ -361,20 +371,42 @@ const AttendanceScanner: React.FC = () => {
                     </div>
                 </div>
             </fieldset>
+            
+            <div className="w-full aspect-square bg-gray-100 rounded-lg mb-4 flex items-center justify-center p-2">
+                <div id="reader" ref={readerRef} className={`${isScanning ? 'block' : 'hidden'} w-full`}></div>
+                {!isScanning && !feedback && !cameraError && (
+                     <div className="text-center text-gray-500">
+                        <p>Kamera akan muncul di sini</p>
+                    </div>
+                )}
+                {isScanning && !cameraError && (
+                    <div className="text-center text-gray-500 animate-pulse">
+                        <p>Mempersiapkan kamera...</p>
+                        <p className="text-sm">Posisikan QR Code di depan kamera.</p>
+                    </div>
+                )}
+            </div>
+            
+            {cameraError && !isScanning && (
+                <div className="p-4 mb-4 text-sm text-red-800 rounded-lg bg-red-100 text-center">
+                    <p className="font-semibold">{cameraError}</p>
+                </div>
+            )}
 
-            <div id="reader" className={`w-full border-2 rounded-lg mb-4 ${!isScanning ? 'hidden' : ''}`} style={{height: '400px'}}></div>
 
             {!isScanning ? (
-                <button onClick={startScanner} className="w-full bg-brand-blue text-white py-3 rounded-lg hover:bg-brand-blue-dark transition-colors font-semibold">
+                <button onClick={startScanner} className="w-full bg-brand-blue text-white py-3 rounded-lg hover:bg-brand-blue-dark transition-colors font-semibold flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125-1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125-1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125-1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" /><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 14.625a1.125 1.125 0 011.125-1.125h4.5a1.125 1.125 0 011.125 1.125v4.5a1.125 1.125 0 01-1.125-1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5z" /></svg>
                     Mulai Scan
                 </button>
             ) : (
-                <button onClick={() => stopScanner(true)} className="w-full bg-red-500 text-white py-3 rounded-lg hover:bg-red-600 transition-colors font-semibold">
+                <button onClick={stopScanner} className="w-full bg-red-500 text-white py-3 rounded-lg hover:bg-red-600 transition-colors font-semibold flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M9 9.563C9 9.252 9.252 9 9.563 9h4.874c.311 0 .563.252.563.563v4.874c0 .311-.252.563-.563.563H9.564A.562.562 0 019 14.437V9.564z" /></svg>
                     Hentikan Scan
                 </button>
             )}
 
-            {feedback && (
+            {feedback && !isScanning && (
                  <div className="mt-4">
                     {feedback.type === 'success' && feedback.student ? (
                         <div className="p-4 rounded-lg bg-green-100 text-green-900 border border-green-200">
@@ -388,7 +420,7 @@ const AttendanceScanner: React.FC = () => {
                                     </span>
                                 )}
                             </h3>
-                            <div className="space-y-1 text-sm">
+                            <div className="space-y-1 text-sm mb-3">
                                 <p><strong>Nama:</strong> {feedback.student.name}</p>
                                 <p><strong>Kelas:</strong> {feedback.student.class}</p>
                                 {feedback.subject !== SCHOOL_ATTENDANCE_SUBJECT && (
@@ -396,21 +428,33 @@ const AttendanceScanner: React.FC = () => {
                                 )}
                                 <p><strong>Waktu:</strong> {feedback.time}</p>
                             </div>
-                            {feedback.whatsappUrl && (
-                                <div className="mt-3 pt-3 border-t border-green-200">
-                                     <a 
-                                        href={feedback.whatsappUrl} 
-                                        target="_blank" 
-                                        rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition-colors text-sm font-medium"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                          <path d="M10.894 2.553a1 1 0 00-1.789 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
-                                        </svg>
-                                        Kirim Notifikasi WhatsApp
-                                    </a>
-                                </div>
-                            )}
+                            <div className="flex flex-wrap gap-2 pt-3 border-t border-green-200">
+                                {feedback.whatsappUrl && (
+                                    <div>
+                                         <a 
+                                            href={feedback.whatsappUrl} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition-colors text-sm font-medium"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                              <path d="M10.894 2.553a1 1 0 00-1.789 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+                                            </svg>
+                                            Kirim via WhatsApp
+                                        </a>
+                                        <p className="text-xs text-gray-500 mt-1">Membuka WhatsApp di tab baru.</p>
+                                    </div>
+                                )}
+                                <button
+                                    onClick={startScanner}
+                                    className="inline-flex items-center gap-2 bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition-colors text-sm font-medium self-start"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9A2.25 2.25 0 0 0 4.5 18.75Z" />
+                                    </svg>
+                                    Scan Berikutnya
+                                </button>
+                            </div>
                         </div>
                     ) : (
                         <div className={`p-4 text-sm rounded-lg text-center ${

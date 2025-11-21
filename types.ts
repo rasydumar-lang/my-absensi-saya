@@ -65,8 +65,7 @@ export type Subject =
 
 
 export interface QrData {
-    studentId: string;
-    name: string;
+    nis: string;
 }
 
 export interface SchoolInfo {
@@ -83,6 +82,7 @@ export interface OperatorUser {
   username: string;
   // FIX: Changed semicolon to a colon to correctly define the password property type.
   password: string;
+  schoolName: string;
 }
 
 export interface Teacher {

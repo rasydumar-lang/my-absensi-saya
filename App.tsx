@@ -4,7 +4,7 @@ import Dashboard from './components/Dashboard';
 import { initializeDatabase, dataService } from './services/dataService';
 import { SchoolInfo } from './types';
 
-export type Page = 'scanner' | 'students' | 'report' | 'dashboard' | 'school' | 'checklist' | 'settings' | 'teachers';
+export type Page = 'scanner' | 'students' | 'report' | 'dashboard' | 'school' | 'checklist' | 'settings' | 'teachers' | 'manual';
 export type UserType = 'admin' | 'operator';
 
 const App: React.FC = () => {

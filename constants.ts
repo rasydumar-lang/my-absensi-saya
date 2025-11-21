@@ -44,3 +44,21 @@ export const SUBJECTS: Subject[] = [
     'Geografi',
     'Antropologi',
 ];
+
+export const SCHOOL_NAMES: string[] = [
+    "SMA NEGERI 1 PULAU BANYAK BARAT",
+    "SMA NEGERI 1 PULAU BANYAK",
+    "SMA NEGERI 1 SINGKIL",
+    "SMAN 1 Gunung Meriah",
+    "SMAN 2 Gunung Meriah",
+    "SMAN 1 Danau Paris",
+    "SMAN 1 Simpang Kanan",
+    "SMAN 1 Singkil Utara",
+    "SMAN 1 Singkohor",
+    "SMAN 1 Suro",
+    "SMA Muhammadiyah Gunung Meriah",
+    "SMKN 1 Gunung Meriah",
+    "SMKN 1 Kuta Baharu",
+    "SMKN Singkil Utara",
+    "SMK Kelautan"
+];
