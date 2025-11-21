@@ -1,10 +1,9 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SchoolInfo } from '../types';
 import { dataService } from '../services/dataService';
 
 interface LoginPageProps {
-  onLogin: (userType: 'admin' | 'operator') => void;
+  onLogin: (userType: 'admin' | 'operator', username: string, schoolName?: string) => void;
   schoolInfo: SchoolInfo;
 }
 
@@ -13,6 +12,25 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, schoolInfo }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [schoolList, setSchoolList] = useState<string[]>([]);
+  const [selectedSchool, setSelectedSchool] = useState<string>(schoolInfo.name);
+
+  useEffect(() => {
+    const fetchSchools = async () => {
+        try {
+            const list = await dataService.getSchoolList();
+            setSchoolList(list);
+        } catch (error) {
+            console.error("Failed to fetch school list:", error);
+        }
+    };
+    fetchSchools();
+  }, []);
+
+  // Ensure selected school is in sync if the prop changes (e.g., after logout from a different school)
+  useEffect(() => {
+      setSelectedSchool(schoolInfo.name);
+  }, [schoolInfo.name]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,17 +42,17 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, schoolInfo }) => {
         const storedPassword = await dataService.getSetting<string>('adminPassword');
         if (password === storedPassword) {
             setError('');
-            onLogin('admin');
+            onLogin('admin', 'admin');
         } else {
             setError('Username atau password salah.');
         }
     } else {
         // Operator Login Check
         try {
-            const operator = await dataService.getOperatorUserByUsernameAndSchool(username, schoolInfo.name);
+            const operator = await dataService.getOperatorUserByUsernameAndSchool(username, selectedSchool);
             if (operator && password === operator.password) {
                  setError('');
-                 onLogin('operator');
+                 onLogin('operator', username, selectedSchool);
             } else {
                 setError('Username atau password salah untuk sekolah ini.');
             }
@@ -57,6 +75,23 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, schoolInfo }) => {
           <p className="text-gray-500 mt-2">Sistem Absensi Siswa</p>
         </div>
         <form onSubmit={handleLogin}>
+          {username.toLowerCase() !== 'admin' && schoolList.length > 1 && (
+              <div className="mb-4">
+                  <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="school">
+                    Sekolah
+                  </label>
+                  <select
+                    id="school"
+                    value={selectedSchool}
+                    onChange={(e) => setSelectedSchool(e.target.value)}
+                    className="shadow-sm appearance-none border rounded w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                  >
+                    {schoolList.map(school => (
+                        <option key={school} value={school}>{school}</option>
+                    ))}
+                  </select>
+              </div>
+          )}
           <div className="mb-4">
             <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="username">
               Username
@@ -69,6 +104,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, schoolInfo }) => {
               className="shadow-sm appearance-none border rounded w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-brand-blue"
               placeholder="admin atau username operator"
               required
+              autoComplete="username"
             />
           </div>
           <div className="mb-6">
@@ -83,6 +119,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, schoolInfo }) => {
               className="shadow-sm appearance-none border rounded w-full py-3 px-4 text-gray-700 mb-3 leading-tight focus:outline-none focus:ring-2 focus:ring-brand-blue"
               placeholder="••••••••••"
               required
+              autoComplete="current-password"
             />
           </div>
           {error && <p className="text-red-500 text-xs italic mb-4">{error}</p>}

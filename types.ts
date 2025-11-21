@@ -92,3 +92,10 @@ export interface Teacher {
   subjects: Subject[];
   classes: ClassName[];
 }
+
+export interface PasswordChangeLogEntry {
+  id: number;
+  schoolName: string;
+  operatorUsername: string;
+  timestamp: number;
+}

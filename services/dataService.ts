@@ -1,4 +1,4 @@
-import { Student, AttendanceRecord, ClassName, Subject, SchoolInfo, OperatorUser, Teacher } from '../types';
+import { Student, AttendanceRecord, ClassName, Subject, SchoolInfo, OperatorUser, Teacher, PasswordChangeLogEntry } from '../types';
 import { SCHOOL_NAMES } from '../constants';
 
 // This service manages all student and attendance data using IndexedDB,
@@ -7,7 +7,7 @@ import { SCHOOL_NAMES } from '../constants';
 // the user manually clears their browser's site data.
 
 const DB_NAME = 'SchoolDB';
-const DB_VERSION = 8; // Incremented version to add schoolName to operators
+const DB_VERSION = 9; // Incremented version to add password change log
 const STUDENTS_STORE = 'students';
 const ATTENDANCE_STORE = 'attendanceRecords';
 const SCHOOL_INFO_STORE = 'schoolInfo';
@@ -15,6 +15,7 @@ const SETTINGS_STORE = 'settings';
 const OPERATOR_USERS_STORE = 'operatorUsers';
 const TEACHERS_STORE = 'teachers';
 const DATA_BACKUPS_STORE = 'dataBackups';
+const PASSWORD_CHANGE_LOG_STORE = 'passwordChangeLog';
 
 
 let dbPromise: Promise<IDBDatabase>;
@@ -79,6 +80,10 @@ const getDb = (): Promise<IDBDatabase> => {
                 }
                  if (!db.objectStoreNames.contains(DATA_BACKUPS_STORE)) {
                     db.createObjectStore(DATA_BACKUPS_STORE, { keyPath: 'schoolName' });
+                }
+                if (!db.objectStoreNames.contains(PASSWORD_CHANGE_LOG_STORE)) {
+                    const logStore = db.createObjectStore(PASSWORD_CHANGE_LOG_STORE, { keyPath: 'id', autoIncrement: true });
+                    logStore.createIndex('schoolName', 'schoolName', { unique: false });
                 }
             };
         });
@@ -290,9 +295,20 @@ export const dataService = {
     },
     updateSetting: async <T>(key: string, value: T): Promise<void> => {
         const db = await getDb();
-        const tx = db.transaction(SETTINGS_STORE, 'readwrite');
-        const store = tx.objectStore(SETTINGS_STORE);
-        await promisifyRequest(store.put({ key, value }));
+        const tx = db.transaction([SETTINGS_STORE, PASSWORD_CHANGE_LOG_STORE], 'readwrite');
+        const settingsStore = tx.objectStore(SETTINGS_STORE);
+        await promisifyRequest(settingsStore.put({ key, value }));
+
+        // If the admin password is being updated, log it.
+        if (key === 'adminPassword') {
+            const logStore = tx.objectStore(PASSWORD_CHANGE_LOG_STORE);
+            const logEntry = {
+                schoolName: 'Sistem Admin',
+                operatorUsername: 'admin',
+                timestamp: Date.now()
+            };
+            await promisifyRequest(logStore.add(logEntry));
+        }
     },
 
     // Operator User Management
@@ -330,12 +346,21 @@ export const dataService = {
     },
     updateOperatorUserPassword: async (id: string, newPassword: string): Promise<void> => {
         const db = await getDb();
-        const tx = db.transaction(OPERATOR_USERS_STORE, 'readwrite');
+        const tx = db.transaction([OPERATOR_USERS_STORE, PASSWORD_CHANGE_LOG_STORE], 'readwrite');
         const store = tx.objectStore(OPERATOR_USERS_STORE);
         const user = await promisifyRequest(store.get(id));
         if (user) {
             user.password = newPassword;
             await promisifyRequest(store.put(user));
+
+            // Log the change
+            const logStore = tx.objectStore(PASSWORD_CHANGE_LOG_STORE);
+            const logEntry = {
+                schoolName: user.schoolName,
+                operatorUsername: user.username,
+                timestamp: Date.now()
+            };
+            await promisifyRequest(logStore.add(logEntry));
         } else {
             throw new Error("Pengguna tidak ditemukan.");
         }
@@ -344,6 +369,21 @@ export const dataService = {
         const db = await getDb();
         const tx = db.transaction(OPERATOR_USERS_STORE, 'readwrite');
         const store = tx.objectStore(OPERATOR_USERS_STORE);
+        await promisifyRequest(store.delete(id));
+    },
+
+    // Password Change Log Management
+    getPasswordChangeLog: async (): Promise<PasswordChangeLogEntry[]> => {
+        const db = await getDb();
+        const tx = db.transaction(PASSWORD_CHANGE_LOG_STORE, 'readonly');
+        const store = tx.objectStore(PASSWORD_CHANGE_LOG_STORE);
+        const records = await promisifyRequest(store.getAll());
+        return records.sort((a, b) => b.timestamp - a.timestamp); // Sort by most recent first
+    },
+    clearPasswordChangeLogEntry: async (id: number): Promise<void> => {
+        const db = await getDb();
+        const tx = db.transaction(PASSWORD_CHANGE_LOG_STORE, 'readwrite');
+        const store = tx.objectStore(PASSWORD_CHANGE_LOG_STORE);
         await promisifyRequest(store.delete(id));
     },
 

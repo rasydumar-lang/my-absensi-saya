@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Page, UserType } from '../App';
 import { SchoolInfo } from '../types';
 import AttendanceScanner from './AttendanceScanner';
@@ -9,10 +9,13 @@ import AttendanceChecklist from './AttendanceChecklist';
 import Settings from './Settings';
 import TeacherManagement from './TeacherManagement';
 import ManualAttendance from './ManualAttendance';
-import { AcademicCapIcon, ArrowLeftOnRectangleIcon, ClipboardDocumentCheckIcon, BuildingOfficeIcon, Cog6ToothIcon, DocumentChartBarIcon, HomeIcon, QrCodeIcon, UserGroupIcon, PencilSquareIcon } from './icons';
+import PasswordChangeLog from './PasswordChangeLog';
+import { dataService } from '../services/dataService';
+import { AcademicCapIcon, ArrowLeftOnRectangleIcon, ClipboardDocumentCheckIcon, BuildingOfficeIcon, Cog6ToothIcon, DocumentChartBarIcon, HomeIcon, QrCodeIcon, UserGroupIcon, PencilSquareIcon, ShieldCheckIcon } from './icons';
 
 interface DashboardProps {
   userType: UserType;
+  username: string;
   currentPage: Page;
   setCurrentPage: (page: Page) => void;
   onLogout: () => void;
@@ -20,9 +23,9 @@ interface DashboardProps {
   refreshSchoolInfo: () => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ userType, currentPage, setCurrentPage, onLogout, schoolInfo, refreshSchoolInfo }) => {
-  const adminPages: Page[] = ['dashboard', 'school', 'settings', 'teachers'];
-  const operatorPages: Page[] = ['dashboard', 'scanner', 'manual', 'checklist', 'students', 'report', 'school', 'teachers'];
+const Dashboard: React.FC<DashboardProps> = ({ userType, username, currentPage, setCurrentPage, onLogout, schoolInfo, refreshSchoolInfo }) => {
+  const adminPages: Page[] = ['dashboard', 'school', 'settings', 'teachers', 'password_log'];
+  const operatorPages: Page[] = ['dashboard', 'scanner', 'manual', 'checklist', 'students', 'report', 'school', 'teachers', 'settings'];
   
   // If current page is not allowed for the user type, redirect to their dashboard.
   useEffect(() => {
@@ -43,6 +46,8 @@ const Dashboard: React.FC<DashboardProps> = ({ userType, currentPage, setCurrent
                 return <Settings />;
             case 'teachers':
                 return <TeacherManagement />;
+            case 'password_log':
+                return <PasswordChangeLog />;
             case 'dashboard':
             default:
                 return <AdminDashboardHome setCurrentPage={setCurrentPage} />;
@@ -63,6 +68,8 @@ const Dashboard: React.FC<DashboardProps> = ({ userType, currentPage, setCurrent
                  return <SchoolData schoolInfo={schoolInfo} onDataUpdated={refreshSchoolInfo} />;
             case 'teachers':
                 return <TeacherManagement />;
+            case 'settings':
+                return <OperatorSettings username={username} schoolInfo={schoolInfo} />;
             case 'dashboard':
             default:
                 return <OperatorDashboardHome setCurrentPage={setCurrentPage} />;
@@ -106,6 +113,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userType, currentPage, setCurrent
                     <NavLink page="dashboard" icon={<HomeIcon className="w-6 h-6"/>}>Dashboard</NavLink>
                     <NavLink page="teachers" icon={<AcademicCapIcon className="w-6 h-6"/>}>Data Guru</NavLink>
                     <NavLink page="school" icon={<BuildingOfficeIcon className="w-6 h-6"/>}>Data Sekolah</NavLink>
+                    <NavLink page="password_log" icon={<ShieldCheckIcon className="w-6 h-6"/>}>Log Password</NavLink>
                     <NavLink page="settings" icon={<Cog6ToothIcon className="w-6 h-6"/>}>Pengaturan</NavLink>
                 </>
             ) : (
@@ -118,6 +126,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userType, currentPage, setCurrent
                     <NavLink page="teachers" icon={<AcademicCapIcon className="w-6 h-6"/>}>Data Guru</NavLink>
                     <NavLink page="report" icon={<DocumentChartBarIcon className="w-6 h-6"/>}>Laporan Absensi</NavLink>
                     <NavLink page="school" icon={<BuildingOfficeIcon className="w-6 h-6"/>}>Data Sekolah</NavLink>
+                    <NavLink page="settings" icon={<Cog6ToothIcon className="w-6 h-6"/>}>Pengaturan</NavLink>
                 </>
             )}
           </nav>
@@ -164,7 +173,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userType, currentPage, setCurrent
 const AdminDashboardHome: React.FC<{setCurrentPage: (page: Page) => void}> = ({setCurrentPage}) => (
     <div>
         <h2 className="text-3xl font-bold text-gray-800 mb-6">Selamat Datang, Admin!</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-6">
             <div onClick={() => setCurrentPage('teachers')} className="bg-white p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer">
                 <div className="flex items-center">
                     <AcademicCapIcon className="w-12 h-12 text-blue-500" />
@@ -180,6 +189,15 @@ const AdminDashboardHome: React.FC<{setCurrentPage: (page: Page) => void}> = ({s
                     <div className="ml-4">
                         <h3 className="text-xl font-semibold text-gray-800">Data Sekolah</h3>
                         <p className="text-gray-500">Pilih sekolah aktif & kelola informasi detailnya.</p>
+                    </div>
+                </div>
+            </div>
+            <div onClick={() => setCurrentPage('password_log')} className="bg-white p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer">
+                <div className="flex items-center">
+                    <ShieldCheckIcon className="w-12 h-12 text-green-500" />
+                    <div className="ml-4">
+                        <h3 className="text-xl font-semibold text-gray-800">Log Password</h3>
+                        <p className="text-gray-500">Lihat riwayat perubahan password operator.</p>
                     </div>
                 </div>
             </div>
@@ -266,5 +284,120 @@ const OperatorDashboardHome: React.FC<{setCurrentPage: (page: Page) => void}> = 
         </div>
     </div>
 );
+
+type OperatorFeedback = {
+    message: string;
+    type: 'success' | 'error';
+};
+
+const OperatorSettings: React.FC<{ username: string, schoolInfo: SchoolInfo }> = ({ username, schoolInfo }) => {
+    const [oldPassword, setOldPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [feedback, setFeedback] = useState<OperatorFeedback | null>(null);
+
+    const showFeedback = (message: string, type: 'success' | 'error') => {
+        setFeedback({ message, type });
+        setTimeout(() => setFeedback(null), 3000);
+    };
+
+    const handlePasswordChange = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setFeedback(null);
+
+        if (newPassword !== confirmPassword) {
+            showFeedback('Password baru tidak cocok.', 'error');
+            return;
+        }
+        if (newPassword.length < 6) {
+            showFeedback('Password baru minimal harus 6 karakter.', 'error');
+            return;
+        }
+
+        try {
+            const operator = await dataService.getOperatorUserByUsernameAndSchool(username, schoolInfo.name);
+            if (!operator) {
+                showFeedback('Gagal menemukan data operator.', 'error');
+                return;
+            }
+
+            if (oldPassword !== operator.password) {
+                showFeedback('Password lama salah.', 'error');
+                return;
+            }
+
+            await dataService.updateOperatorUserPassword(operator.id, newPassword);
+            showFeedback('Password Anda berhasil diperbarui!', 'success');
+            setOldPassword('');
+            setNewPassword('');
+            setConfirmPassword('');
+        } catch (error) {
+            console.error(error);
+            showFeedback('Gagal memperbarui password.', 'error');
+        }
+    };
+    
+    return (
+        <div className="max-w-2xl mx-auto">
+            <div className="bg-white p-6 rounded-lg shadow-md">
+                <h2 className="text-xl font-bold mb-6 text-gray-800">Ubah Password Operator</h2>
+                {feedback && (
+                    <div className={`p-4 mb-4 text-sm rounded-lg ${feedback.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        {feedback.message}
+                    </div>
+                )}
+                <form onSubmit={handlePasswordChange} className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700" htmlFor="oldPassword">
+                            Password Lama
+                        </label>
+                        <input
+                            id="oldPassword"
+                            type="password"
+                            value={oldPassword}
+                            onChange={(e) => setOldPassword(e.target.value)}
+                            className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue"
+                            required
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700" htmlFor="newPassword">
+                            Password Baru
+                        </label>
+                        <input
+                            id="newPassword"
+                            type="password"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue"
+                            required
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700" htmlFor="confirmPassword">
+                            Konfirmasi Password Baru
+                        </label>
+                        <input
+                            id="confirmPassword"
+                            type="password"
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue"
+                            required
+                        />
+                    </div>
+                    <div className="text-right">
+                        <button
+                            type="submit"
+                            className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-brand-blue hover:bg-brand-blue-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-blue"
+                        >
+                            Simpan Perubahan
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+}
 
 export default Dashboard;

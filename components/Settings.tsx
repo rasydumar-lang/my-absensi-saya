@@ -375,7 +375,7 @@ const OperatorManagement = () => {
                         <h3 className="text-xl font-semibold mb-4 text-gray-800">Tambah Operator Baru</h3>
                         <form onSubmit={handleAddOperator}>
                              <div className="mb-4">
-                                <label htmlFor="schoolName" className="block text-sm font-medium text-gray-700">Sekolah</label>
+                                <label htmlFor="schoolName" className="block text-sm font-medium text-gray-700">Tugaskan Operator ke Sekolah</label>
                                 <select
                                     id="schoolName"
                                     value={selectedSchool}
@@ -387,6 +387,7 @@ const OperatorManagement = () => {
                                         <option key={school} value={school}>{school}</option>
                                     ))}
                                 </select>
+                                <p className="text-xs text-gray-500 mt-1">Operator ini hanya akan dapat login dan mengelola data untuk sekolah yang dipilih.</p>
                             </div>
                             <div className="mb-4">
                                 <label htmlFor="newUsername" className="block text-sm font-medium text-gray-700">Username</label>
@@ -449,7 +450,7 @@ const OperatorManagement = () => {
                                     Batal
                                 </button>
                                 <button type="submit" className="px-4 py-2 bg-brand-blue text-white rounded-md hover:bg-brand-blue-dark">
-                                    Simpan Password
+                                    Ubah Password
                                 </button>
                             </div>
                         </form>
