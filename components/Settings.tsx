@@ -233,6 +233,10 @@ const OperatorManagement = () => {
     const [schoolList, setSchoolList] = useState<string[]>([]);
     const [selectedSchool, setSelectedSchool] = useState<string>('');
 
+    const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
+    const [selectedOperator, setSelectedOperator] = useState<OperatorUser | null>(null);
+    const [newOperatorPassword, setNewOperatorPassword] = useState('');
+
 
     useEffect(() => {
         loadOperators();
@@ -293,7 +297,32 @@ const OperatorManagement = () => {
                  showFeedback('Gagal menghapus operator.', 'error');
             }
         }
-    }
+    };
+    
+    const openChangePasswordModal = (operator: OperatorUser) => {
+        setSelectedOperator(operator);
+        setNewOperatorPassword('');
+        setIsChangePasswordModalOpen(true);
+    };
+
+    const handleUpdateOperatorPassword = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedOperator) return;
+
+        if (newOperatorPassword.length < 6) {
+            showFeedback('Password baru minimal harus 6 karakter.', 'error');
+            // Keep the modal open
+            return;
+        }
+        try {
+            await dataService.updateOperatorUserPassword(selectedOperator.id, newOperatorPassword);
+            showFeedback(`Password untuk operator "${selectedOperator.username}" berhasil diubah.`, 'success');
+            setIsChangePasswordModalOpen(false);
+            setSelectedOperator(null);
+        } catch (error) {
+            showFeedback('Gagal mengubah password operator.', 'error');
+        }
+    };
 
     return (
         <div className="bg-white p-6 rounded-lg shadow-md">
@@ -326,7 +355,7 @@ const OperatorManagement = () => {
                                 <td className="py-3 px-4">{op.username}</td>
                                 <td className="py-3 px-4">{op.schoolName}</td>
                                 <td className="py-3 px-4 flex gap-2">
-                                     <button disabled className="bg-yellow-300 text-white px-3 py-1 text-sm rounded cursor-not-allowed" title="Segera Hadir">
+                                     <button onClick={() => openChangePasswordModal(op)} className="bg-yellow-500 text-white px-3 py-1 text-sm rounded hover:bg-yellow-600">
                                         Ubah Password
                                     </button>
                                      <button onClick={() => handleDeleteOperator(op.id, op.username)} className="bg-red-500 text-white px-3 py-1 text-sm rounded hover:bg-red-600">
@@ -388,6 +417,39 @@ const OperatorManagement = () => {
                                 </button>
                                 <button type="submit" className="px-4 py-2 bg-brand-blue text-white rounded-md hover:bg-brand-blue-dark">
                                     Tambah
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {isChangePasswordModalOpen && selectedOperator && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+                    <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
+                        <h3 className="text-xl font-semibold mb-4 text-gray-800">
+                            Ubah Password untuk <span className="font-bold">{selectedOperator.username}</span>
+                        </h3>
+                        <form onSubmit={handleUpdateOperatorPassword}>
+                            <div className="mb-6">
+                                <label htmlFor="newOperatorPassword" className="block text-sm font-medium text-gray-700">Password Baru</label>
+                                <input
+                                    id="newOperatorPassword"
+                                    type="password"
+                                    value={newOperatorPassword}
+                                    onChange={e => setNewOperatorPassword(e.target.value)}
+                                    className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue"
+                                    required
+                                    autoFocus
+                                />
+                                <p className="text-xs text-gray-500 mt-1">Minimal 6 karakter.</p>
+                            </div>
+                            <div className="flex justify-end gap-4">
+                                <button type="button" onClick={() => setIsChangePasswordModalOpen(false)} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">
+                                    Batal
+                                </button>
+                                <button type="submit" className="px-4 py-2 bg-brand-blue text-white rounded-md hover:bg-brand-blue-dark">
+                                    Simpan Password
                                 </button>
                             </div>
                         </form>
