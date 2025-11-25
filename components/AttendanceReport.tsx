@@ -4,10 +4,11 @@ import { AttendanceRecord, ClassName, Subject, Student, SchoolInfo, Teacher } fr
 import { CLASSES, SUBJECTS } from '../constants';
 
 interface AttendanceReportProps {
-    schoolInfo: SchoolInfo;
+    activeSchoolInfo: SchoolInfo;
+    activeSchoolName: string;
 }
 
-const AttendanceReport: React.FC<AttendanceReportProps> = ({ schoolInfo }) => {
+const AttendanceReport: React.FC<AttendanceReportProps> = ({ activeSchoolInfo, activeSchoolName }) => {
     const [records, setRecords] = useState<AttendanceRecord[]>([]);
     const [students, setStudents] = useState<Student[]>([]);
     const [allTeachers, setAllTeachers] = useState<Teacher[]>([]);
@@ -37,13 +38,13 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ schoolInfo }) => {
 
     useEffect(() => {
         loadReportData();
-    }, [selectedClass, selectedSubject, selectedMonth, selectedYear]);
+    }, [selectedClass, selectedSubject, selectedMonth, selectedYear, activeSchoolName]);
 
     const loadReportData = async () => {
-        const studentData = await dataService.getStudents(selectedClass);
+        const studentData = await dataService.getStudents(activeSchoolName, selectedClass);
         setStudents(studentData);
         
-        const recordData = await dataService.getAttendanceRecords({
+        const recordData = await dataService.getAttendanceRecords(activeSchoolName, {
             className: selectedClass,
             subject: selectedSubject,
             month: selectedMonth,
@@ -51,7 +52,7 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ schoolInfo }) => {
         });
         setRecords(recordData);
 
-        const teacherData = await dataService.getTeachers();
+        const teacherData = await dataService.getTeachers(activeSchoolName);
         setAllTeachers(teacherData);
     };
     
@@ -68,7 +69,7 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ schoolInfo }) => {
             return;
         }
 
-        const logoElement = schoolInfo.logoBase64 ? `<img src="${schoolInfo.logoBase64}" alt="Logo" style="width: 60px; height: 60px; border-radius: 50%; margin-right: 16px;">` : '';
+        const logoElement = activeSchoolInfo.logoBase64 ? `<img src="${activeSchoolInfo.logoBase64}" alt="Logo" style="width: 60px; height: 60px; border-radius: 50%; margin-right: 16px;">` : '';
 
         const today = new Date();
         const printDate = today.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -79,8 +80,8 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ schoolInfo }) => {
                     <p>Mengetahui,</p>
                     <p>Kepala Sekolah</p>
                     <br><br><br><br>
-                    <p style="font-weight: bold; text-decoration: underline; margin-bottom: 0;">${schoolInfo.headmaster || '_____________________'}</p>
-                    <p style="margin-top: 2px;">NIP. ${schoolInfo.headmasterNip || '-'}</p>
+                    <p style="font-weight: bold; text-decoration: underline; margin-bottom: 0;">${activeSchoolInfo.headmaster || '_____________________'}</p>
+                    <p style="margin-top: 2px;">NIP. ${activeSchoolInfo.headmasterNip || '-'}</p>
                 </div>
                 <div style="text-align: center; width: 45%;">
                     <p>Pulau Banyak Barat, ${printDate}</p>
@@ -98,7 +99,7 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ schoolInfo }) => {
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Cetak Laporan Absensi - ${schoolInfo.name}</title>
+                <title>Cetak Laporan Absensi - ${activeSchoolInfo.name}</title>
                 <script src="https://cdn.tailwindcss.com"></script>
                 <style>
                     @media print {
@@ -131,9 +132,9 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ schoolInfo }) => {
                 <div id="print-header" style="display: none;">
                     ${logoElement}
                     <div>
-                        <h3 style="font-size: 1.25rem; font-weight: bold; margin: 0; white-space: nowrap;">${schoolInfo.name}</h3>
+                        <h3 style="font-size: 1.25rem; font-weight: bold; margin: 0; white-space: nowrap;">${activeSchoolInfo.name}</h3>
                         <p style="margin: 0; font-size: 1.1rem;">REKAPITULASI ABSENSI SISWA</p>
-                        <p style="margin: 0; font-size: 0.875rem;">${schoolInfo.address}</p>
+                        <p style="margin: 0; font-size: 0.875rem;">${activeSchoolInfo.address}</p>
                     </div>
                 </div>
                 ${printSection.innerHTML}
@@ -165,7 +166,7 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ schoolInfo }) => {
         const dateStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(modalState.day).padStart(2, '0')}`;
         
         try {
-            await dataService.setManualAttendance(modalState.student.id, selectedSubject, dateStr, newStatus, selectedSemester);
+            await dataService.setManualAttendance(modalState.student.id, selectedSubject, activeSchoolName, dateStr, newStatus, selectedSemester);
             await loadReportData();
         } catch (error: any) {
             alert(`Error: ${error.message}`);
@@ -269,7 +270,7 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ schoolInfo }) => {
                 <div id="print-section" className="mt-6">
                     <div className="text-center mb-4 hidden">
                         <h3 className="text-xl font-bold">REKAPITULASI ABSENSI SISWA</h3>
-                        <p>{schoolInfo.name}</p>
+                        <p>{activeSchoolInfo.name}</p>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 text-sm mb-4 gap-x-4">
                         <div>

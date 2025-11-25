@@ -70,7 +70,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, schoolInfo }) => {
       <div className="max-w-md w-full bg-white p-8 rounded-xl shadow-lg">
         <div className="text-center mb-8">
           <img src={logoSrc} alt="School Logo" className="mx-auto mb-4 rounded-full w-20 h-20 object-cover"/>
-          <h1 className="text-lg sm:text-xl font-bold text-gray-800 whitespace-nowrap">{schoolInfo.name}</h1>
+          <h1 className="text-lg sm:text-xl font-bold text-gray-800 whitespace-nowrap">{username.toLowerCase() === 'admin' ? 'Panel Admin' : schoolInfo.name}</h1>
           <h2 className="text-xl text-gray-600 mt-1">SELAMAT DATANG</h2>
           <p className="text-gray-500 mt-2">Sistem Absensi Siswa</p>
         </div>

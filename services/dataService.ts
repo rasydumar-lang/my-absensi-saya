@@ -7,14 +7,13 @@ import { SCHOOL_NAMES } from '../constants';
 // the user manually clears their browser's site data.
 
 const DB_NAME = 'SchoolDB';
-const DB_VERSION = 9; // Incremented version to add password change log
+const DB_VERSION = 10; // Incremented version for multi-school data isolation
 const STUDENTS_STORE = 'students';
 const ATTENDANCE_STORE = 'attendanceRecords';
 const SCHOOL_INFO_STORE = 'schoolInfo';
 const SETTINGS_STORE = 'settings';
 const OPERATOR_USERS_STORE = 'operatorUsers';
 const TEACHERS_STORE = 'teachers';
-const DATA_BACKUPS_STORE = 'dataBackups';
 const PASSWORD_CHANGE_LOG_STORE = 'passwordChangeLog';
 
 
@@ -38,27 +37,50 @@ const getDb = (): Promise<IDBDatabase> => {
                 const db = (event.target as IDBOpenDBRequest).result;
                 const transaction = (event.target as IDBOpenDBRequest).transaction;
 
-                // Handle Students Store update
-                let studentStore;
+                // Students Store: Add schoolName index for data isolation
                 if (!db.objectStoreNames.contains(STUDENTS_STORE)) {
-                    studentStore = db.createObjectStore(STUDENTS_STORE, { keyPath: 'id' });
-                    studentStore.createIndex('class', 'class', { unique: false });
+                    const studentStore = db.createObjectStore(STUDENTS_STORE, { keyPath: 'id' });
+                    studentStore.createIndex('schoolName_class', ['schoolName', 'class'], { unique: false });
+                    studentStore.createIndex('schoolName_nis', ['schoolName', 'nis'], { unique: true });
                 } else {
-                    studentStore = transaction!.objectStore(STUDENTS_STORE);
-                }
-                
-                if (!studentStore.indexNames.contains('nis')) {
-                    studentStore.createIndex('nis', 'nis', { unique: true });
+                    const studentStore = transaction!.objectStore(STUDENTS_STORE);
+                    if (!studentStore.indexNames.contains('schoolName_nis')) {
+                        studentStore.createIndex('schoolName_nis', ['schoolName', 'nis'], { unique: true });
+                    }
+                     if (!studentStore.indexNames.contains('schoolName_class')) {
+                        studentStore.createIndex('schoolName_class', ['schoolName', 'class'], { unique: false });
+                    }
                 }
 
+                // Attendance Store: Add schoolName index
                 if (!db.objectStoreNames.contains(ATTENDANCE_STORE)) {
                     const attendanceStore = db.createObjectStore(ATTENDANCE_STORE, { keyPath: 'id' });
-                    attendanceStore.createIndex('studentId_date_subject', ['studentId', 'date', 'subject'], { unique: true });
-                    attendanceStore.createIndex('date', 'date', { unique: false });
+                    attendanceStore.createIndex('schoolName_studentId_date_subject', ['schoolName', 'studentId', 'date', 'subject'], { unique: true });
+                    attendanceStore.createIndex('schoolName_date', ['schoolName', 'date'], { unique: false });
+                } else {
+                     const attendanceStore = transaction!.objectStore(ATTENDANCE_STORE);
+                     if (!attendanceStore.indexNames.contains('schoolName_studentId_date_subject')) {
+                        // This complex index is new for multi-school
+                        attendanceStore.createIndex('schoolName_studentId_date_subject', ['schoolName', 'studentId', 'date', 'subject'], { unique: true });
+                     }
                 }
+                
+                // School Info Store: Now holds multiple schools, keyed by name
                 if (!db.objectStoreNames.contains(SCHOOL_INFO_STORE)) {
                     db.createObjectStore(SCHOOL_INFO_STORE, { keyPath: 'id' });
                 }
+
+                // Teachers Store: Add schoolName index
+                if (!db.objectStoreNames.contains(TEACHERS_STORE)) {
+                    const teacherStore = db.createObjectStore(TEACHERS_STORE, { keyPath: 'id' });
+                    teacherStore.createIndex('schoolName', 'schoolName', { unique: false });
+                } else {
+                    const teacherStore = transaction!.objectStore(TEACHERS_STORE);
+                    if (!teacherStore.indexNames.contains('schoolName')) {
+                       teacherStore.createIndex('schoolName', 'schoolName', { unique: false });
+                    }
+                }
+
                 if (!db.objectStoreNames.contains(SETTINGS_STORE)) {
                     db.createObjectStore(SETTINGS_STORE, { keyPath: 'key' });
                 }
@@ -67,23 +89,63 @@ const getDb = (): Promise<IDBDatabase> => {
                     operatorStore.createIndex('username_schoolName', ['username', 'schoolName'], { unique: true });
                 } else {
                     const operatorStore = transaction!.objectStore(OPERATOR_USERS_STORE);
-                    if (operatorStore.indexNames.contains('username')) {
-                        operatorStore.deleteIndex('username');
-                    }
                     if (!operatorStore.indexNames.contains('username_schoolName')) {
                         operatorStore.createIndex('username_schoolName', ['username', 'schoolName'], { unique: true });
                     }
                 }
-                 if (!db.objectStoreNames.contains(TEACHERS_STORE)) {
-                    const teacherStore = db.createObjectStore(TEACHERS_STORE, { keyPath: 'id' });
-                    teacherStore.createIndex('name', 'name', { unique: false });
-                }
-                 if (!db.objectStoreNames.contains(DATA_BACKUPS_STORE)) {
-                    db.createObjectStore(DATA_BACKUPS_STORE, { keyPath: 'schoolName' });
-                }
                 if (!db.objectStoreNames.contains(PASSWORD_CHANGE_LOG_STORE)) {
                     const logStore = db.createObjectStore(PASSWORD_CHANGE_LOG_STORE, { keyPath: 'id', autoIncrement: true });
                     logStore.createIndex('schoolName', 'schoolName', { unique: false });
+                }
+
+                // Data migration logic for existing users from single-school to multi-school
+                // This will run only once when the DB version is upgraded.
+                if (event.oldVersion < 10) {
+                    console.log("Migrating data to multi-school format...");
+                    const schoolInfoStore = transaction!.objectStore(SCHOOL_INFO_STORE);
+                    schoolInfoStore.get(1).onsuccess = (e: any) => {
+                        const oldSchoolInfo = e.target.result;
+                        if (oldSchoolInfo) {
+                           const schoolName = oldSchoolInfo.name;
+                           console.log(`Found old school: ${schoolName}. Migrating its data.`);
+                           
+                           // Migrate students
+                           const studentStore = transaction!.objectStore(STUDENTS_STORE);
+                           studentStore.getAll().onsuccess = (ev: any) => {
+                               ev.target.result.forEach((student: any) => {
+                                   if (!student.schoolName) {
+                                       student.schoolName = schoolName;
+                                       studentStore.put(student);
+                                   }
+                               });
+                               console.log("Student migration complete.");
+                           };
+                           
+                           // Migrate teachers
+                           const teacherStore = transaction!.objectStore(TEACHERS_STORE);
+                           teacherStore.getAll().onsuccess = (ev: any) => {
+                               ev.target.result.forEach((teacher: any) => {
+                                   if (!teacher.schoolName) {
+                                       teacher.schoolName = schoolName;
+                                       teacherStore.put(teacher);
+                                   }
+                               });
+                               console.log("Teacher migration complete.");
+                           };
+
+                           // Migrate attendance records
+                           const attendanceStore = transaction!.objectStore(ATTENDANCE_STORE);
+                            attendanceStore.getAll().onsuccess = (ev: any) => {
+                               ev.target.result.forEach((record: any) => {
+                                   if (!record.schoolName) {
+                                       record.schoolName = schoolName;
+                                       attendanceStore.put(record);
+                                   }
+                               });
+                               console.log("Attendance record migration complete.");
+                           };
+                        }
+                    };
                 }
             };
         });
@@ -100,8 +162,9 @@ const promisifyRequest = <T>(request: IDBRequest<T>): Promise<T> => {
 
 const seedInitialData = async () => {
     const db = await getDb();
+    const defaultSchoolName = SCHOOL_NAMES[0];
     
-    // Seed Students
+    // Seed Students for the default school
     const studentTx = db.transaction(STUDENTS_STORE, 'readwrite');
     const studentStore = studentTx.objectStore(STUDENTS_STORE);
     const studentCount = await promisifyRequest(studentStore.count());
@@ -215,6 +278,7 @@ const seedInitialData = async () => {
                 nis: student.nis || `2024${String(nisCounter).padStart(4, '0')}`,
                 class: student.class,
                 parentPhoneNumber: student.parentPhoneNumber,
+                schoolName: defaultSchoolName,
             };
             nisCounter++;
             return promisifyRequest(studentStore.add(newStudent));
@@ -223,61 +287,71 @@ const seedInitialData = async () => {
         console.log('Student seeding complete.');
     }
 
-    // Seed School Info and related settings
-    const settingsTx = db.transaction([SCHOOL_INFO_STORE, SETTINGS_STORE], 'readwrite');
-    const schoolStore = settingsTx.objectStore(SCHOOL_INFO_STORE);
-    const settingsStore = settingsTx.objectStore(SETTINGS_STORE);
+    // Seed School Info for all schools
+    const schoolTx = db.transaction(SCHOOL_INFO_STORE, 'readwrite');
+    const schoolStore = schoolTx.objectStore(SCHOOL_INFO_STORE);
     const schoolInfoCount = await promisifyRequest(schoolStore.count());
-
     if (schoolInfoCount === 0) {
-        console.log('Seeding initial school info and settings...');
-        const initialSchoolName = SCHOOL_NAMES[0];
-        const initialSchoolInfo: SchoolInfo = {
-            id: 1,
-            name: initialSchoolName,
-            address: "",
-            headmaster: "",
-            headmasterNip: "",
-            logoBase64: null,
-        };
-        await promisifyRequest(schoolStore.add(initialSchoolInfo));
-        
-        // Seed school-specific attendance status
-        await promisifyRequest(settingsStore.put({ key: `attendance_enabled_${initialSchoolName}`, value: true }));
-
-        console.log('School info and settings seeding complete.');
+        console.log('Seeding initial school info for all schools...');
+        const schoolPromises = SCHOOL_NAMES.map(name => {
+            const schoolInfo: SchoolInfo = {
+                id: name, // Use name as ID
+                name: name,
+                address: "",
+                headmaster: "",
+                headmasterNip: "",
+                logoBase64: null,
+            };
+            return promisifyRequest(schoolStore.add(schoolInfo));
+        });
+        await Promise.all(schoolPromises);
+        console.log('All school info seeded.');
     }
 
-    // Seed School List
+    // Seed Settings (admin password, school list, etc.)
+    const settingsTx = db.transaction(SETTINGS_STORE, 'readwrite');
+    const settingsStore = settingsTx.objectStore(SETTINGS_STORE);
     const schoolListSetting = await promisifyRequest(settingsStore.get('schoolList'));
     if (!schoolListSetting) {
         console.log('Seeding initial school list...');
         await promisifyRequest(settingsStore.put({ key: 'schoolList', value: SCHOOL_NAMES }));
-        console.log('School list seeding complete.');
+        
+        // Also seed default attendance status for all schools
+        const statusPromises = SCHOOL_NAMES.map(name => 
+            promisifyRequest(settingsStore.put({ key: `attendance_enabled_${name}`, value: true }))
+        );
+        await Promise.all(statusPromises);
+
+        console.log('School list and attendance statuses seeded.');
     }
     
-    // Seed Admin Password
-    const adminPasswordTx = db.transaction(SETTINGS_STORE, 'readwrite');
-    const adminPasswordStore = adminPasswordTx.objectStore(SETTINGS_STORE);
-    const passwordSetting = await promisifyRequest(adminPasswordStore.get('adminPassword'));
-    if (!passwordSetting) {
+    const adminPasswordSetting = await promisifyRequest(settingsStore.get('adminPassword'));
+    if (!adminPasswordSetting) {
         console.log('Seeding initial admin password...');
-        await promisifyRequest(adminPasswordStore.put({ key: 'adminPassword', value: 'admin123' }));
+        await promisifyRequest(settingsStore.put({ key: 'adminPassword', value: 'admin123' }));
         console.log('Admin password seeding complete.');
     }
+    const adminNameSetting = await promisifyRequest(settingsStore.get('adminName'));
+    if (!adminNameSetting) {
+        await promisifyRequest(settingsStore.put({ key: 'adminName', value: 'Administrator' }));
+    }
+    const adminNipSetting = await promisifyRequest(settingsStore.get('adminNip'));
+    if (!adminNipSetting) {
+        await promisifyRequest(settingsStore.put({ key: 'adminNip', value: '' }));
+    }
 
-
-    // Seed Operators
+    // Seed Operators for the default school
     const operatorTx = db.transaction(OPERATOR_USERS_STORE, 'readwrite');
     const operatorStore = operatorTx.objectStore(OPERATOR_USERS_STORE);
     const operatorCount = await promisifyRequest(operatorStore.count());
 
     if (operatorCount === 0) {
         console.log('Seeding initial operator...');
-        await promisifyRequest(operatorStore.put({ id: `operator-${Date.now()}`, username: 'absen', password: 'absen123', schoolName: SCHOOL_NAMES[0] }));
+        await promisifyRequest(operatorStore.put({ id: `operator-${Date.now()}`, username: 'absen', password: 'absen123', schoolName: defaultSchoolName }));
         console.log('Operator seeding complete.');
     }
 }
+
 
 export const initializeDatabase = async () => {
     await getDb(); // ensures DB is open and upgraded if needed
@@ -388,24 +462,26 @@ export const dataService = {
     },
 
     // Teacher Management
-    getTeachers: async (): Promise<Teacher[]> => {
+    getTeachers: async (schoolName: string): Promise<Teacher[]> => {
         const db = await getDb();
         const tx = db.transaction(TEACHERS_STORE, 'readonly');
         const store = tx.objectStore(TEACHERS_STORE);
-        return promisifyRequest(store.getAll());
+        const index = store.index('schoolName');
+        return promisifyRequest(index.getAll(schoolName));
     },
-    addTeacher: async (teacherData: Omit<Teacher, 'id'>): Promise<Teacher> => {
+    addTeacher: async (teacherData: Omit<Teacher, 'id' | 'schoolName'>, schoolName: string): Promise<Teacher> => {
         const db = await getDb();
         const tx = db.transaction(TEACHERS_STORE, 'readwrite');
         const store = tx.objectStore(TEACHERS_STORE);
         const newTeacher: Teacher = {
             id: `teacher-${Date.now()}`,
-            ...teacherData
+            ...teacherData,
+            schoolName,
         };
         await promisifyRequest(store.add(newTeacher));
         return newTeacher;
     },
-    updateTeacher: async (id: string, updatedData: Partial<Omit<Teacher, 'id'>>): Promise<Teacher> => {
+    updateTeacher: async (id: string, updatedData: Partial<Omit<Teacher, 'id' | 'schoolName'>>): Promise<Teacher> => {
         const db = await getDb();
         const tx = db.transaction(TEACHERS_STORE, 'readwrite');
         const store = tx.objectStore(TEACHERS_STORE);
@@ -425,17 +501,17 @@ export const dataService = {
     },
 
     // School Info Management
-    getSchoolInfo: async (): Promise<SchoolInfo | undefined> => {
+    getSchoolInfo: async (schoolName: string): Promise<SchoolInfo | undefined> => {
         const db = await getDb();
         const tx = db.transaction(SCHOOL_INFO_STORE, 'readonly');
         const store = tx.objectStore(SCHOOL_INFO_STORE);
-        return promisifyRequest(store.get(1)); // Always get the record with ID 1
+        return promisifyRequest(store.get(schoolName));
     },
-    updateSchoolInfo: async (updatedData: Partial<SchoolInfo>): Promise<SchoolInfo> => {
+    updateSchoolInfo: async (schoolName: string, updatedData: Partial<Omit<SchoolInfo, 'id' | 'name'>>): Promise<SchoolInfo> => {
         const db = await getDb();
         const tx = db.transaction(SCHOOL_INFO_STORE, 'readwrite');
         const store = tx.objectStore(SCHOOL_INFO_STORE);
-        const existingInfo = await promisifyRequest(store.get(1));
+        const existingInfo = await promisifyRequest(store.get(schoolName));
         if (!existingInfo) {
             throw new Error("School info not found. Cannot update.");
         }
@@ -454,10 +530,10 @@ export const dataService = {
 
     addSchool: async (schoolName: string): Promise<void> => {
         const db = await getDb();
-        const tx = db.transaction(SETTINGS_STORE, 'readwrite');
-        const store = tx.objectStore(SETTINGS_STORE);
+        const tx = db.transaction([SETTINGS_STORE, SCHOOL_INFO_STORE], 'readwrite');
+        const settingsStore = tx.objectStore(SETTINGS_STORE);
         
-        const listResult = await promisifyRequest(store.get('schoolList'));
+        const listResult = await promisifyRequest(settingsStore.get('schoolList'));
         const currentList: string[] = listResult ? listResult.value : SCHOOL_NAMES;
 
         if (currentList.includes(schoolName)) {
@@ -465,90 +541,38 @@ export const dataService = {
         }
 
         const newList = [...currentList, schoolName];
-        await promisifyRequest(store.put({ key: 'schoolList', value: newList }));
+        await promisifyRequest(settingsStore.put({ key: 'schoolList', value: newList }));
+
+        // Also add a new SchoolInfo entry
+        const schoolInfoStore = tx.objectStore(SCHOOL_INFO_STORE);
+        const newSchoolInfo: SchoolInfo = {
+            id: schoolName,
+            name: schoolName,
+            address: '',
+            headmaster: '',
+            headmasterNip: '',
+            logoBase64: null,
+        };
+        await promisifyRequest(schoolInfoStore.add(newSchoolInfo));
 
         // Also set its default attendance status to enabled
-        await promisifyRequest(store.put({ key: `attendance_enabled_${schoolName}`, value: true }));
+        await promisifyRequest(settingsStore.put({ key: `attendance_enabled_${schoolName}`, value: true }));
     },
     
-    checkForBackup: async (schoolName: string): Promise<boolean> => {
-        const db = await getDb();
-        const tx = db.transaction(DATA_BACKUPS_STORE, 'readonly');
-        const store = tx.objectStore(DATA_BACKUPS_STORE);
-        const backup = await promisifyRequest(store.get(schoolName));
-        return !!backup;
-    },
-
-    backupAndResetData: async (oldSchoolName: string): Promise<void> => {
-        const db = await getDb();
-        
-        // Use a single transaction for reading to ensure data consistency
-        const readTx = db.transaction([STUDENTS_STORE, TEACHERS_STORE], 'readonly');
-        const studentStoreRead = readTx.objectStore(STUDENTS_STORE);
-        const teacherStoreRead = readTx.objectStore(TEACHERS_STORE);
-
-        const allStudents = await promisifyRequest(studentStoreRead.getAll());
-        const allTeachers = await promisifyRequest(teacherStoreRead.getAll());
-        
-        await new Promise(resolve => readTx.oncomplete = resolve);
-
-        const backupData = {
-            schoolName: oldSchoolName,
-            students: allStudents,
-            teachers: allTeachers,
-        };
-
-        const writeTx = db.transaction([STUDENTS_STORE, TEACHERS_STORE, DATA_BACKUPS_STORE], 'readwrite');
-        const studentStoreWrite = writeTx.objectStore(STUDENTS_STORE);
-        const teacherStoreWrite = writeTx.objectStore(TEACHERS_STORE);
-        const backupStoreWrite = writeTx.objectStore(DATA_BACKUPS_STORE);
-        
-        await promisifyRequest(backupStoreWrite.put(backupData));
-        await promisifyRequest(studentStoreWrite.clear());
-        await promisifyRequest(teacherStoreWrite.clear());
-    },
-
-    restoreDataFromBackup: async (schoolName: string): Promise<void> => {
-        const db = await getDb();
-        const tx = db.transaction([STUDENTS_STORE, TEACHERS_STORE, DATA_BACKUPS_STORE], 'readwrite');
-        const studentStore = tx.objectStore(STUDENTS_STORE);
-        const teacherStore = tx.objectStore(TEACHERS_STORE);
-        const backupStore = tx.objectStore(DATA_BACKUPS_STORE);
-
-        const backup = await promisifyRequest(backupStore.get(schoolName));
-        if (!backup) {
-            console.warn(`No backup found for school name: ${schoolName}`);
-            return;
-        }
-
-        // Restore data
-        await promisifyRequest(studentStore.clear());
-        await promisifyRequest(teacherStore.clear());
-
-        const studentPromises = backup.students.map((student: Student) => 
-            promisifyRequest(studentStore.add(student))
-        );
-        const teacherPromises = backup.teachers.map((teacher: Teacher) => 
-            promisifyRequest(teacherStore.add(teacher))
-        );
-        
-        await Promise.all([...studentPromises, ...teacherPromises]);
-        
-        // Delete the used backup
-        await promisifyRequest(backupStore.delete(schoolName));
-    },
-
     // Student Management
-    getStudents: async (className?: ClassName): Promise<Student[]> => {
+    getStudents: async (schoolName: string, className?: ClassName): Promise<Student[]> => {
         const db = await getDb();
         const tx = db.transaction(STUDENTS_STORE, 'readonly');
         const store = tx.objectStore(STUDENTS_STORE);
+        const index = store.index('schoolName_class');
 
         if (className) {
-            const index = store.index('class');
-            return promisifyRequest(index.getAll(className));
+            return promisifyRequest(index.getAll([schoolName, className]));
         }
-        return promisifyRequest(store.getAll());
+        // If no class is specified, we need a different approach. A simple getAll on this index won't work.
+        // We'll iterate through all students of the school.
+        const allStudents = await promisifyRequest(store.getAll());
+        return allStudents.filter(s => s.schoolName === schoolName);
     },
     getStudentById: async (id: string): Promise<Student | undefined> => {
         const db = await getDb();
@@ -556,14 +580,14 @@ export const dataService = {
         const store = tx.objectStore(STUDENTS_STORE);
         return promisifyRequest(store.get(id));
     },
-    getStudentByNis: async (nis: string): Promise<Student | undefined> => {
+    getStudentByNis: async (nis: string, schoolName: string): Promise<Student | undefined> => {
         const db = await getDb();
         const tx = db.transaction(STUDENTS_STORE, 'readonly');
         const store = tx.objectStore(STUDENTS_STORE);
-        const index = store.index('nis');
-        return promisifyRequest(index.get(nis));
+        const index = store.index('schoolName_nis');
+        return promisifyRequest(index.get([schoolName, nis]));
     },
-    addStudent: async (name: string, nis: string, className: ClassName, parentPhoneNumber?: string): Promise<Student> => {
+    addStudent: async (name: string, nis: string, className: ClassName, schoolName: string, parentPhoneNumber?: string): Promise<Student> => {
         const db = await getDb();
         const tx = db.transaction(STUDENTS_STORE, 'readwrite');
         const store = tx.objectStore(STUDENTS_STORE);
@@ -572,6 +596,7 @@ export const dataService = {
             name,
             nis,
             class: className,
+            schoolName,
             parentPhoneNumber,
         };
         await promisifyRequest(store.add(newStudent));
@@ -603,16 +628,20 @@ export const dataService = {
     },
 
     // Attendance Management
-    getAttendanceRecords: async (filters: { className?: ClassName, subject?: Subject, month?: number, year?: number }): Promise<AttendanceRecord[]> => {
+    getAttendanceRecords: async (schoolName: string, filters: { className?: ClassName, subject?: Subject, month?: number, year?: number }): Promise<AttendanceRecord[]> => {
         const db = await getDb();
         const tx = db.transaction([ATTENDANCE_STORE, STUDENTS_STORE], 'readonly');
         const attendanceStore = tx.objectStore(ATTENDANCE_STORE);
         const allRecords = await promisifyRequest(attendanceStore.getAll());
         
+        // Filter by school first
+        const schoolRecords = allRecords.filter(r => r.schoolName === schoolName);
+
         // Manual filtering since IndexedDB queries for complex filters can be tricky.
         const filteredRecords = [];
-        for (const record of allRecords) {
+        for (const record of schoolRecords) {
             const recordDate = new Date(record.date);
+            // This is inefficient; a better approach would be to join in-memory.
             const student = await dataService.getStudentById(record.studentId);
             if (!student) continue;
 
@@ -621,7 +650,6 @@ export const dataService = {
             const monthMatch = !filters.month || recordDate.getUTCMonth() === filters.month - 1;
             const yearMatch = !filters.year || recordDate.getUTCFullYear() === filters.year;
 
-
             if (classMatch && subjectMatch && monthMatch && yearMatch) {
                 filteredRecords.push(record);
             }
@@ -629,19 +657,18 @@ export const dataService = {
         return filteredRecords;
     },
 
-    recordAttendance: async (studentId: string, subject: Subject, attendanceDateTime: Date, scanMode: 'check-in' | 'check-out', timeliness?: 'on-time' | 'late', semester?: 'Ganjil' | 'Genap'): Promise<{ record: AttendanceRecord, type: 'check-in' | 'check-out' }> => {
+    recordAttendance: async (studentId: string, subject: Subject, schoolName: string, attendanceDateTime: Date, scanMode: 'check-in' | 'check-out', timeliness?: 'on-time' | 'late', semester?: 'Ganjil' | 'Genap'): Promise<{ record: AttendanceRecord, type: 'check-in' | 'check-out' }> => {
         const db = await getDb();
         const tx = db.transaction(ATTENDANCE_STORE, 'readwrite');
         const store = tx.objectStore(ATTENDANCE_STORE);
-        const index = store.index('studentId_date_subject');
+        const index = store.index('schoolName_studentId_date_subject');
         
-        // Use local date components to avoid timezone issues.
         const year = attendanceDateTime.getFullYear();
         const month = String(attendanceDateTime.getMonth() + 1).padStart(2, '0');
         const day = String(attendanceDateTime.getDate()).padStart(2, '0');
         const dateStr = `${year}-${month}-${day}`;
 
-        const existingRecord = await promisifyRequest(index.get([studentId, dateStr, subject]));
+        const existingRecord = await promisifyRequest(index.get([schoolName, studentId, dateStr, subject]));
         
         if (existingRecord && existingRecord.status !== 'present') {
             throw new Error(`Siswa sudah tercatat '${existingRecord.status === 'sick' ? 'Sakit' : 'Izin'}' dan tidak dapat melakukan absensi.`);
@@ -651,7 +678,6 @@ export const dataService = {
             if (existingRecord) {
                 throw new Error("Siswa sudah tercatat absen masuk untuk mata pelajaran ini pada tanggal yang dipilih.");
             }
-            // Check-in
             const newRecord: AttendanceRecord = {
                 id: `att-${Date.now()}`,
                 studentId,
@@ -662,6 +688,7 @@ export const dataService = {
                 date: dateStr,
                 timeliness: timeliness,
                 semester,
+                schoolName,
             };
             await promisifyRequest(store.add(newRecord));
             return { record: newRecord, type: 'check-in' };
@@ -673,7 +700,6 @@ export const dataService = {
             if (existingRecord.checkOut !== null) {
                 throw new Error("Siswa sudah melakukan absen pulang untuk mata pelajaran ini pada tanggal yang dipilih.");
             }
-            // Check-out
             existingRecord.checkOut = attendanceDateTime.toISOString();
             if (semester && !existingRecord.semester) {
                 existingRecord.semester = semester;
@@ -683,13 +709,13 @@ export const dataService = {
         }
     },
 
-    setManualAttendance: async (studentId: string, subject: Subject, date: string, status: 'sick' | 'permission' | null, semester?: 'Ganjil' | 'Genap'): Promise<void> => {
+    setManualAttendance: async (studentId: string, subject: Subject, schoolName: string, date: string, status: 'sick' | 'permission' | null, semester?: 'Ganjil' | 'Genap'): Promise<void> => {
         const db = await getDb();
         const tx = db.transaction(ATTENDANCE_STORE, 'readwrite');
         const store = tx.objectStore(ATTENDANCE_STORE);
-        const index = store.index('studentId_date_subject');
+        const index = store.index('schoolName_studentId_date_subject');
         
-        const existingRecord = await promisifyRequest(index.get([studentId, date, subject]));
+        const existingRecord = await promisifyRequest(index.get([schoolName, studentId, date, subject]));
     
         if (status) { // Setting to 'sick' or 'permission'
             if (existingRecord && existingRecord.status === 'present') {
@@ -704,13 +730,13 @@ export const dataService = {
                 checkIn: null,
                 checkOut: null,
                 semester,
+                schoolName,
             };
             await promisifyRequest(store.put(record));
         } else { // Reverting to 'Alpa' by deleting the record
             if (existingRecord && existingRecord.status !== 'present') {
                 await promisifyRequest(store.delete(existingRecord.id));
             }
-            // If the record is 'present' or doesn't exist, do nothing.
         }
     },
 };

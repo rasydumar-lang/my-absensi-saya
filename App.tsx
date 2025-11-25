@@ -3,6 +3,7 @@ import LoginPage from './components/LoginPage';
 import Dashboard from './components/Dashboard';
 import { initializeDatabase, dataService } from './services/dataService';
 import { SchoolInfo } from './types';
+import { SCHOOL_NAMES } from './constants';
 
 export type Page = 'scanner' | 'students' | 'report' | 'dashboard' | 'school' | 'checklist' | 'settings' | 'teachers' | 'manual' | 'password_log';
 export type UserType = 'admin' | 'operator';
@@ -13,7 +14,8 @@ const App: React.FC = () => {
   const [username, setUsername] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [schoolInfo, setSchoolInfo] = useState<SchoolInfo | null>(null);
+  const [activeSchoolName, setActiveSchoolName] = useState<string | null>(null);
+  const [activeSchoolInfo, setActiveSchoolInfo] = useState<SchoolInfo | null>(null);
 
   useEffect(() => {
     // Register Service Worker for PWA functionality
@@ -28,21 +30,38 @@ const App: React.FC = () => {
     const init = async () => {
       try {
         await initializeDatabase(); // Seed data if needed
-        const info = await dataService.getSchoolInfo();
-        if (info) {
-          setSchoolInfo(info);
-          document.title = `Absensi - ${info.name}`;
+        
+        const loggedInStatus = sessionStorage.getItem('isLoggedIn');
+        const storedUserType = sessionStorage.getItem('userType') as UserType | null;
+        const storedUsername = sessionStorage.getItem('username');
+        const storedSchoolName = sessionStorage.getItem('activeSchoolName');
+
+        if (loggedInStatus === 'true' && storedUserType && storedUsername) {
+            setIsLoggedIn(true);
+            setUserType(storedUserType);
+            setUsername(storedUsername);
+
+            const schoolNameToLoad = storedUserType === 'admin' ? (storedSchoolName || SCHOOL_NAMES[0]) : storedSchoolName;
+
+            if (schoolNameToLoad) {
+                const info = await dataService.getSchoolInfo(schoolNameToLoad);
+                if (info) {
+                    setActiveSchoolInfo(info);
+                    setActiveSchoolName(info.name);
+                    document.title = `Absensi - ${info.name}`;
+                }
+            }
+        } else {
+            // Not logged in, load default school info for login page
+            const defaultSchoolInfo = await dataService.getSchoolInfo(SCHOOL_NAMES[0]);
+            if (defaultSchoolInfo) {
+                setActiveSchoolInfo(defaultSchoolInfo);
+                setActiveSchoolName(defaultSchoolInfo.name);
+            }
         }
+
       } catch (error) {
         console.error("Failed to initialize database:", error);
-      }
-      const loggedInStatus = sessionStorage.getItem('isLoggedIn');
-      const storedUserType = sessionStorage.getItem('userType') as UserType | null;
-      const storedUsername = sessionStorage.getItem('username');
-      if (loggedInStatus === 'true' && storedUserType && storedUsername) {
-        setIsLoggedIn(true);
-        setUserType(storedUserType);
-        setUsername(storedUsername);
       }
       setIsLoading(false); // finish loading
     };
@@ -50,30 +69,39 @@ const App: React.FC = () => {
   }, []);
   
   const refreshSchoolInfo = async () => {
-    const info = await dataService.getSchoolInfo();
-    if (info) {
-      setSchoolInfo(info);
-      document.title = `Absensi - ${info.name}`;
+    if (activeSchoolName) {
+        const info = await dataService.getSchoolInfo(activeSchoolName);
+        if (info) {
+            setActiveSchoolInfo(info);
+            document.title = `Absensi - ${info.name}`;
+        }
     }
   }
 
   const handleLogin = async (loggedInUserType: UserType, loggedInUsername: string, schoolName?: string) => {
-    // If an operator logs in, their school becomes the active school for the session.
-    if (loggedInUserType === 'operator' && schoolName && schoolInfo && schoolName !== schoolInfo.name) {
-        // The only "active school" concept is the single entry in the schoolInfo store.
-        // We update this entry to reflect the school of the logged-in operator.
-        // This is safe because the data backup/reset logic is only in the SchoolData component,
-        // not in the dataService.updateSchoolInfo function.
-        await dataService.updateSchoolInfo({ name: schoolName });
-        await refreshSchoolInfo(); // Re-fetch the school info to update the state
+    if (loggedInUserType === 'operator' && !schoolName) {
+        console.error("Operator login requires a school name.");
+        return;
     }
+    
+    const schoolForSession = schoolName || activeSchoolName || SCHOOL_NAMES[0];
     
     sessionStorage.setItem('isLoggedIn', 'true');
     sessionStorage.setItem('userType', loggedInUserType);
     sessionStorage.setItem('username', loggedInUsername);
+    sessionStorage.setItem('activeSchoolName', schoolForSession);
+
     setIsLoggedIn(true);
     setUserType(loggedInUserType);
     setUsername(loggedInUsername);
+    setActiveSchoolName(schoolForSession);
+    
+    const info = await dataService.getSchoolInfo(schoolForSession);
+    if (info) {
+      setActiveSchoolInfo(info);
+      document.title = `Absensi - ${info.name}`;
+    }
+    
     setCurrentPage('dashboard');
   };
 
@@ -81,13 +109,14 @@ const App: React.FC = () => {
     sessionStorage.removeItem('isLoggedIn');
     sessionStorage.removeItem('userType');
     sessionStorage.removeItem('username');
+    sessionStorage.removeItem('activeSchoolName');
     setIsLoggedIn(false);
     setUserType(null);
     setUsername(null);
     setCurrentPage('dashboard');
   };
   
-  if (isLoading || !schoolInfo) {
+  if (isLoading || !activeSchoolInfo) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-brand-gray">
         <div className="text-center">
@@ -99,7 +128,7 @@ const App: React.FC = () => {
   }
 
   if (!isLoggedIn || !userType || !username) {
-    return <LoginPage onLogin={handleLogin} schoolInfo={schoolInfo} />;
+    return <LoginPage onLogin={handleLogin} schoolInfo={activeSchoolInfo} />;
   }
 
   return (
@@ -109,7 +138,8 @@ const App: React.FC = () => {
       currentPage={currentPage}
       setCurrentPage={setCurrentPage}
       onLogout={handleLogout}
-      schoolInfo={schoolInfo}
+      activeSchoolName={activeSchoolName!}
+      activeSchoolInfo={activeSchoolInfo}
       refreshSchoolInfo={refreshSchoolInfo}
     />
   );

@@ -4,6 +4,7 @@ export interface Student {
   class: ClassName;
   nis: string; // Nomor Induk Siswa
   parentPhoneNumber?: string;
+  schoolName: string;
 }
 
 // FIX: Added missing pipe `|` between 'sick' and 'permission'.
@@ -19,6 +20,7 @@ export interface AttendanceRecord {
   date: string; // YYYY-MM-DD
   timeliness?: 'on-time' | 'late';
   semester?: 'Ganjil' | 'Genap';
+  schoolName: string;
 }
 
 export enum ClassName {
@@ -69,7 +71,7 @@ export interface QrData {
 }
 
 export interface SchoolInfo {
-  id: number; // Use a fixed ID like 1 since there's only one entry
+  id: string; // The school name itself acts as the unique ID
   name: string;
   address: string;
   headmaster: string;
@@ -91,6 +93,7 @@ export interface Teacher {
   nip?: string;
   subjects: Subject[];
   classes: ClassName[];
+  schoolName: string;
 }
 
 export interface PasswordChangeLogEntry {

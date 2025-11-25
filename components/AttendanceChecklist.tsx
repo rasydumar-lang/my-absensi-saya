@@ -3,6 +3,11 @@ import { dataService } from '../services/dataService';
 import { Student, ClassName, Subject, AttendanceRecord, SchoolInfo } from '../types';
 import { CLASSES, SUBJECTS, SCHOOL_ATTENDANCE_SUBJECT } from '../constants';
 
+interface AttendanceChecklistProps {
+    activeSchoolInfo: SchoolInfo | null;
+    activeSchoolName: string;
+}
+
 const ALL_SUBJECTS_KEY = "ALL_SUBJECTS";
 
 const formatPhoneNumber = (phone: string) => {
@@ -28,22 +33,16 @@ const formatPhoneNumber = (phone: string) => {
     return formatted.replace(/[^0-9]/g, '');
 }
 
-const AttendanceChecklist: React.FC = () => {
+const AttendanceChecklist: React.FC<AttendanceChecklistProps> = ({ activeSchoolInfo, activeSchoolName }) => {
     const [students, setStudents] = useState<Student[]>([]);
     const [attendance, setAttendance] = useState<Map<string, AttendanceRecord>>(new Map());
     const [selectedClass, setSelectedClass] = useState<ClassName>(CLASSES[0]);
     const [selectedSubject, setSelectedSubject] = useState<Subject | typeof ALL_SUBJECTS_KEY>(SUBJECTS[0]);
     const [isLoading, setIsLoading] = useState(false);
-    const [schoolInfo, setSchoolInfo] = useState<SchoolInfo | null>(null);
-
+    
     useEffect(() => {
-        const getInfo = async () => {
-            const info = await dataService.getSchoolInfo();
-            if (info) setSchoolInfo(info);
-        };
-        getInfo();
         loadData();
-    }, [selectedClass, selectedSubject]);
+    }, [selectedClass, selectedSubject, activeSchoolName]);
 
     const loadData = async () => {
         setIsLoading(true);
@@ -53,11 +52,11 @@ const AttendanceChecklist: React.FC = () => {
             const month = today.getMonth() + 1;
             const day = today.getDate();
 
-            const studentData = await dataService.getStudents(selectedClass);
+            const studentData = await dataService.getStudents(activeSchoolName, selectedClass);
             studentData.sort((a, b) => a.name.localeCompare(b.name));
             setStudents(studentData);
 
-            const recordData = await dataService.getAttendanceRecords({
+            const recordData = await dataService.getAttendanceRecords(activeSchoolName, {
                 className: selectedClass,
                 subject: selectedSubject === ALL_SUBJECTS_KEY ? undefined : selectedSubject,
                 month: month,
@@ -112,7 +111,7 @@ const AttendanceChecklist: React.FC = () => {
 
     const generateWhatsappUrl = (student: Student): string | null => {
         const record = attendance.get(student.id);
-        if (!record || !student.parentPhoneNumber || !schoolInfo) return null;
+        if (!record || !student.parentPhoneNumber || !activeSchoolInfo) return null;
 
         const date = new Date(record.date).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
         let statusMessage = '';
@@ -140,7 +139,7 @@ const AttendanceChecklist: React.FC = () => {
             ? `\nMata Pelajaran: *${record.subject}*`
             : '';
 
-        const message = `Yth. Bapak/Ibu Wali Murid,\n\nDengan ini kami beritahukan bahwa ananda *${student.name}* (Kelas *${student.class}*) ${statusMessage}${subjectInfo}\n\nTerima kasih atas perhatiannya.\n*${schoolInfo.name}*`;
+        const message = `Yth. Bapak/Ibu Wali Murid,\n\nDengan ini kami beritahukan bahwa ananda *${student.name}* (Kelas *${student.class}*) ${statusMessage}${subjectInfo}\n\nTerima kasih atas perhatiannya.\n*${activeSchoolInfo.name}*`;
 
         const formattedPhone = formatPhoneNumber(student.parentPhoneNumber);
         return `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(message)}`;

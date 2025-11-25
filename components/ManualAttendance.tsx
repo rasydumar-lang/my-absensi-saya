@@ -15,10 +15,11 @@ interface Feedback {
 }
 
 interface ManualAttendanceProps {
-    schoolInfo: SchoolInfo;
+    activeSchoolInfo: SchoolInfo;
+    activeSchoolName: string;
 }
 
-const ManualAttendance: React.FC<ManualAttendanceProps> = ({ schoolInfo }) => {
+const ManualAttendance: React.FC<ManualAttendanceProps> = ({ activeSchoolInfo, activeSchoolName }) => {
     const REGULAR_SUBJECTS = SUBJECTS.filter(s => s !== SCHOOL_ATTENDANCE_SUBJECT);
 
     const [nis, setNis] = useState<string>('');
@@ -41,12 +42,12 @@ const ManualAttendance: React.FC<ManualAttendanceProps> = ({ schoolInfo }) => {
 
     useEffect(() => {
         const checkSystemStatus = async () => {
-            const settingKey = `attendance_enabled_${schoolInfo.name}`;
+            const settingKey = `attendance_enabled_${activeSchoolName}`;
             const status = await dataService.getSetting<boolean>(settingKey);
             setIsSystemEnabled(status !== false);
         };
         checkSystemStatus();
-    }, [schoolInfo]);
+    }, [activeSchoolName]);
 
     const speak = (text: string) => {
         if ('speechSynthesis' in window) {
@@ -101,7 +102,7 @@ const ManualAttendance: React.FC<ManualAttendanceProps> = ({ schoolInfo }) => {
         setFeedback(null);
         
         try {
-            const student = await dataService.getStudentByNis(nis.trim());
+            const student = await dataService.getStudentByNis(nis.trim(), activeSchoolName);
             if (!student) {
                 throw new Error("Siswa dengan NIS tersebut tidak ditemukan.");
             }
@@ -118,7 +119,7 @@ const ManualAttendance: React.FC<ManualAttendanceProps> = ({ schoolInfo }) => {
                 timelinessStatus = isLate ? 'late' : 'on-time';
             }
 
-            const result = await dataService.recordAttendance(student.id, subjectToRecord, attendanceDateTime, scanMode, timelinessStatus, selectedSemester);
+            const result = await dataService.recordAttendance(student.id, subjectToRecord, activeSchoolName, attendanceDateTime, scanMode, timelinessStatus, selectedSemester);
             
             if (result.type === 'check-in') {
                 speak(`${student.name}, Absen Masuk Berhasil, ${timelinessStatus === 'on-time' ? 'Anda Tepat Waktu' : 'Maaf, Anda Terlambat'}`);
@@ -143,7 +144,7 @@ const ManualAttendance: React.FC<ManualAttendanceProps> = ({ schoolInfo }) => {
                     ? `\nMata Pelajaran: *${subjectToRecord}*`
                     : '';
 
-                const message = `Yth. Bapak/Ibu Wali Murid,\n\nDengan ini kami beritahukan bahwa ananda *${student.name}* (Kelas *${student.class}*) telah melakukan absensi *${attendanceTypeMsg}* pada:\n\nHari/Tanggal: ${date}\nPukul: ${time} ${statusText}${subjectInfo}\n\nTerima kasih atas perhatiannya.\n*${schoolInfo.name}*`;
+                const message = `Yth. Bapak/Ibu Wali Murid,\n\nDengan ini kami beritahukan bahwa ananda *${student.name}* (Kelas *${student.class}*) telah melakukan absensi *${attendanceTypeMsg}* pada:\n\nHari/Tanggal: ${date}\nPukul: ${time} ${statusText}${subjectInfo}\n\nTerima kasih atas perhatiannya.\n*${activeSchoolInfo.name}*`;
 
                 const formattedPhone = formatPhoneNumber(student.parentPhoneNumber);
                 whatsappUrl = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(message)}`;
@@ -183,7 +184,7 @@ const ManualAttendance: React.FC<ManualAttendanceProps> = ({ schoolInfo }) => {
         return (
             <div className="bg-white p-6 rounded-lg shadow-md text-center">
                 <h2 className="text-2xl font-bold mb-4 text-gray-800">Sistem Absensi Dinonaktifkan</h2>
-                <p className="text-gray-600">Fitur absensi untuk <strong className="font-semibold">{schoolInfo.name}</strong> saat ini sedang dimatikan oleh admin. Silakan aktifkan kembali di menu Pengaturan.</p>
+                <p className="text-gray-600">Fitur absensi untuk <strong className="font-semibold">{activeSchoolInfo.name}</strong> saat ini sedang dimatikan oleh admin. Silakan aktifkan kembali di menu Pengaturan.</p>
             </div>
         );
     }

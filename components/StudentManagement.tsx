@@ -4,7 +4,11 @@ import { Student, ClassName, QrData } from '../types';
 import { CLASSES } from '../constants';
 import QRCode from 'qrcode';
 
-const StudentManagement: React.FC = () => {
+interface StudentManagementProps {
+    activeSchoolName: string;
+}
+
+const StudentManagement: React.FC<StudentManagementProps> = ({ activeSchoolName }) => {
     const [students, setStudents] = useState<Student[]>([]);
     const [selectedClass, setSelectedClass] = useState<ClassName>(CLASSES[0]);
     const [newStudentName, setNewStudentName] = useState('');
@@ -15,17 +19,17 @@ const StudentManagement: React.FC = () => {
 
     useEffect(() => {
         loadStudents();
-    }, [selectedClass]);
+    }, [selectedClass, activeSchoolName]);
 
     const loadStudents = async () => {
-        const studentData = await dataService.getStudents(selectedClass);
+        const studentData = await dataService.getStudents(activeSchoolName, selectedClass);
         setStudents(studentData);
     };
 
     const handleAddStudent = async (e: React.FormEvent) => {
         e.preventDefault();
         if (newStudentName.trim() && newStudentNis.trim()) {
-            await dataService.addStudent(newStudentName, newStudentNis, selectedClass, newStudentParentPhone);
+            await dataService.addStudent(newStudentName, newStudentNis, selectedClass, activeSchoolName, newStudentParentPhone);
             setNewStudentName('');
             setNewStudentNis('');
             setNewStudentParentPhone('');

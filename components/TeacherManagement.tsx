@@ -3,7 +3,11 @@ import { dataService } from '../services/dataService';
 import { Teacher, ClassName, Subject } from '../types';
 import { CLASSES, SUBJECTS } from '../constants';
 
-const TeacherManagement: React.FC = () => {
+interface TeacherManagementProps {
+    activeSchoolName: string;
+}
+
+const TeacherManagement: React.FC<TeacherManagementProps> = ({ activeSchoolName }) => {
     const [teachers, setTeachers] = useState<Teacher[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [feedback, setFeedback] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
@@ -18,11 +22,11 @@ const TeacherManagement: React.FC = () => {
 
     useEffect(() => {
         loadTeachers();
-    }, []);
+    }, [activeSchoolName]);
 
     const loadTeachers = async () => {
         setIsLoading(true);
-        const teacherData = await dataService.getTeachers();
+        const teacherData = await dataService.getTeachers(activeSchoolName);
         setTeachers(teacherData);
         setIsLoading(false);
     };
@@ -85,7 +89,7 @@ const TeacherManagement: React.FC = () => {
                 await dataService.updateTeacher(editingTeacher.id, teacherData);
                 showFeedback('Data guru berhasil diperbarui!', 'success');
             } else {
-                await dataService.addTeacher(teacherData);
+                await dataService.addTeacher(teacherData, activeSchoolName);
                 showFeedback('Guru baru berhasil ditambahkan!', 'success');
             }
             closeModal();

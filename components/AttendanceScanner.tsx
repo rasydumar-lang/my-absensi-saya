@@ -16,10 +16,11 @@ interface Feedback {
 }
 
 interface AttendanceScannerProps {
-    schoolInfo: SchoolInfo;
+    activeSchoolInfo: SchoolInfo;
+    activeSchoolName: string;
 }
 
-const AttendanceScanner: React.FC<AttendanceScannerProps> = ({ schoolInfo }) => {
+const AttendanceScanner: React.FC<AttendanceScannerProps> = ({ activeSchoolInfo, activeSchoolName }) => {
     const REGULAR_SUBJECTS = SUBJECTS.filter(s => s !== SCHOOL_ATTENDANCE_SUBJECT);
 
     const [attendanceType, setAttendanceType] = useState<'subject' | 'school'>('subject');
@@ -45,13 +46,13 @@ const AttendanceScanner: React.FC<AttendanceScannerProps> = ({ schoolInfo }) => 
 
     useEffect(() => {
       const checkSystemStatus = async () => {
-        const settingKey = `attendance_enabled_${schoolInfo.name}`;
+        const settingKey = `attendance_enabled_${activeSchoolName}`;
         const status = await dataService.getSetting<boolean>(settingKey);
         // Default to true if setting is not found (undefined)
         setIsSystemEnabled(status !== false);
       };
       checkSystemStatus();
-    }, [schoolInfo]);
+    }, [activeSchoolName]);
 
     const speak = (text: string) => {
         if ('speechSynthesis' in window) {
@@ -149,7 +150,7 @@ const AttendanceScanner: React.FC<AttendanceScannerProps> = ({ schoolInfo }) => 
                 throw new Error("QR Code tidak valid atau format lama.");
             }
 
-            const student = await dataService.getStudentByNis(qrData.nis);
+            const student = await dataService.getStudentByNis(qrData.nis, activeSchoolName);
             if (!student) {
                 throw new Error("Siswa tidak ditemukan. Pastikan data siswa (terutama NIS) sudah ditambahkan di perangkat ini.");
             }
@@ -166,7 +167,7 @@ const AttendanceScanner: React.FC<AttendanceScannerProps> = ({ schoolInfo }) => 
                 timelinessStatus = isLate ? 'late' : 'on-time';
             }
 
-            const result = await dataService.recordAttendance(student.id, subjectToRecord, attendanceDateTime, scanMode, timelinessStatus, selectedSemester);
+            const result = await dataService.recordAttendance(student.id, subjectToRecord, activeSchoolName, attendanceDateTime, scanMode, timelinessStatus, selectedSemester);
             
             // --- TTS Logic ---
             if (result.type === 'check-in') {
@@ -197,7 +198,7 @@ const AttendanceScanner: React.FC<AttendanceScannerProps> = ({ schoolInfo }) => 
                     ? `\nMata Pelajaran: *${subjectToRecord}*`
                     : '';
 
-                const message = `Yth. Bapak/Ibu Wali Murid,\n\nDengan ini kami beritahukan bahwa ananda *${student.name}* (Kelas *${student.class}*) telah melakukan absensi *${attendanceTypeMsg}* pada:\n\nHari/Tanggal: ${date}\nPukul: ${time} ${statusText}${subjectInfo}\n\nTerima kasih atas perhatiannya.\n*${schoolInfo.name}*`;
+                const message = `Yth. Bapak/Ibu Wali Murid,\n\nDengan ini kami beritahukan bahwa ananda *${student.name}* (Kelas *${student.class}*) telah melakukan absensi *${attendanceTypeMsg}* pada:\n\nHari/Tanggal: ${date}\nPukul: ${time} ${statusText}${subjectInfo}\n\nTerima kasih atas perhatiannya.\n*${activeSchoolInfo.name}*`;
 
                 const formattedPhone = formatPhoneNumber(student.parentPhoneNumber);
                 whatsappUrl = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(message)}`;
@@ -233,7 +234,7 @@ const AttendanceScanner: React.FC<AttendanceScannerProps> = ({ schoolInfo }) => 
         return (
             <div className="bg-white p-6 rounded-lg shadow-md text-center">
                 <h2 className="text-2xl font-bold mb-4 text-gray-800">Sistem Absensi Dinonaktifkan</h2>
-                <p className="text-gray-600">Fitur scan absensi untuk <strong className="font-semibold">{schoolInfo.name}</strong> saat ini sedang dimatikan oleh admin. Silakan aktifkan kembali di menu Pengaturan.</p>
+                <p className="text-gray-600">Fitur scan absensi untuk <strong className="font-semibold">{activeSchoolInfo.name}</strong> saat ini sedang dimatikan oleh admin. Silakan aktifkan kembali di menu Pengaturan.</p>
             </div>
         );
     }

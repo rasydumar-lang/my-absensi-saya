@@ -19,13 +19,15 @@ interface DashboardProps {
   currentPage: Page;
   setCurrentPage: (page: Page) => void;
   onLogout: () => void;
-  schoolInfo: SchoolInfo;
+  activeSchoolName: string;
+  activeSchoolInfo: SchoolInfo;
   refreshSchoolInfo: () => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ userType, username, currentPage, setCurrentPage, onLogout, schoolInfo, refreshSchoolInfo }) => {
+const Dashboard: React.FC<DashboardProps> = ({ userType, username, currentPage, setCurrentPage, onLogout, activeSchoolName, activeSchoolInfo, refreshSchoolInfo }) => {
   const adminPages: Page[] = ['dashboard', 'school', 'settings', 'teachers', 'password_log'];
   const operatorPages: Page[] = ['dashboard', 'scanner', 'manual', 'checklist', 'students', 'report', 'school', 'teachers', 'settings'];
+  const [adminName, setAdminName] = useState<string>('Panel Admin');
   
   // If current page is not allowed for the user type, redirect to their dashboard.
   useEffect(() => {
@@ -37,15 +39,26 @@ const Dashboard: React.FC<DashboardProps> = ({ userType, username, currentPage, 
     }
   }, [userType, currentPage, setCurrentPage]);
 
+  const refreshAdminName = async () => {
+    const name = await dataService.getSetting<string>('adminName');
+    setAdminName(name || 'Administrator');
+  };
+
+  useEffect(() => {
+    if (userType === 'admin') {
+      refreshAdminName();
+    }
+  }, [userType]);
+
   const renderPage = () => {
     if (userType === 'admin') {
         switch (currentPage) {
             case 'school':
-                return <SchoolData schoolInfo={schoolInfo} onDataUpdated={refreshSchoolInfo} />;
+                return <SchoolData activeSchoolInfo={activeSchoolInfo} onDataUpdated={refreshSchoolInfo} userType={userType} onAdminProfileUpdated={refreshAdminName} />;
             case 'settings':
                 return <Settings />;
             case 'teachers':
-                return <TeacherManagement />;
+                return <TeacherManagement activeSchoolName={activeSchoolName} />;
             case 'password_log':
                 return <PasswordChangeLog />;
             case 'dashboard':
@@ -55,21 +68,21 @@ const Dashboard: React.FC<DashboardProps> = ({ userType, username, currentPage, 
     } else { // operator
          switch (currentPage) {
             case 'scanner':
-                return <AttendanceScanner schoolInfo={schoolInfo} />;
+                return <AttendanceScanner activeSchoolInfo={activeSchoolInfo} activeSchoolName={activeSchoolName} />;
             case 'manual':
-                return <ManualAttendance schoolInfo={schoolInfo} />;
+                return <ManualAttendance activeSchoolInfo={activeSchoolInfo} activeSchoolName={activeSchoolName} />;
             case 'students':
-                return <StudentManagement />;
+                return <StudentManagement activeSchoolName={activeSchoolName} />;
             case 'report':
-                return <AttendanceReport schoolInfo={schoolInfo} />;
+                return <AttendanceReport activeSchoolInfo={activeSchoolInfo} activeSchoolName={activeSchoolName} />;
             case 'checklist':
-                return <AttendanceChecklist />;
+                return <AttendanceChecklist activeSchoolInfo={activeSchoolInfo} activeSchoolName={activeSchoolName} />;
             case 'school':
-                 return <SchoolData schoolInfo={schoolInfo} onDataUpdated={refreshSchoolInfo} />;
+                 return <SchoolData activeSchoolInfo={activeSchoolInfo} onDataUpdated={refreshSchoolInfo} userType={userType} onAdminProfileUpdated={() => {}} />;
             case 'teachers':
-                return <TeacherManagement />;
+                return <TeacherManagement activeSchoolName={activeSchoolName} />;
             case 'settings':
-                return <OperatorSettings username={username} schoolInfo={schoolInfo} />;
+                return <OperatorSettings username={username} activeSchoolInfo={activeSchoolInfo} />;
             case 'dashboard':
             default:
                 return <OperatorDashboardHome setCurrentPage={setCurrentPage} />;
@@ -96,15 +109,21 @@ const Dashboard: React.FC<DashboardProps> = ({ userType, username, currentPage, 
     </a>
   );
   
-  const logoSrc = schoolInfo.logoBase64 ? schoolInfo.logoBase64 : "https://picsum.photos/40";
+  const headerTitle = userType === 'admin' ? adminName : activeSchoolInfo.name;
 
   return (
     <div className="flex h-screen bg-brand-gray">
       {/* Sidebar */}
       <div className="hidden md:flex flex-col w-64 bg-gray-900">
         <div className="flex items-center justify-center h-20 border-b border-gray-700 px-4">
-          <img src={logoSrc} alt="Logo" className="rounded-full mr-3 w-10 h-10 object-cover flex-shrink-0" />
-          <h1 className="text-lg font-bold text-white truncate" title={schoolInfo.name}>{schoolInfo.name}</h1>
+          {userType === 'admin' ? (
+              <div className="rounded-full mr-3 w-10 h-10 bg-brand-blue flex items-center justify-center flex-shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+              </div>
+          ) : (
+              <img src={activeSchoolInfo.logoBase64 || "https://picsum.photos/40"} alt="Logo" className="rounded-full mr-3 w-10 h-10 object-cover flex-shrink-0" />
+          )}
+          <h1 className="text-lg font-bold text-white truncate" title={headerTitle}>{headerTitle}</h1>
         </div>
         <div className="flex flex-col justify-between flex-1 mt-6">
           <nav className="px-2 space-y-2">
@@ -112,7 +131,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userType, username, currentPage, 
                 <>
                     <NavLink page="dashboard" icon={<HomeIcon className="w-6 h-6"/>}>Dashboard</NavLink>
                     <NavLink page="teachers" icon={<AcademicCapIcon className="w-6 h-6"/>}>Data Guru</NavLink>
-                    <NavLink page="school" icon={<BuildingOfficeIcon className="w-6 h-6"/>}>Data Sekolah</NavLink>
+                    <NavLink page="school" icon={<BuildingOfficeIcon className="w-6 h-6"/>}>Profil & Sekolah</NavLink>
                     <NavLink page="password_log" icon={<ShieldCheckIcon className="w-6 h-6"/>}>Log Password</NavLink>
                     <NavLink page="settings" icon={<Cog6ToothIcon className="w-6 h-6"/>}>Pengaturan</NavLink>
                 </>
@@ -143,8 +162,8 @@ const Dashboard: React.FC<DashboardProps> = ({ userType, username, currentPage, 
       <div className="flex flex-col flex-1 overflow-y-auto">
         <div className="flex items-center justify-between h-20 px-6 bg-white border-b">
           <div className="min-w-0">
-            <h1 className="text-lg md:text-xl font-semibold text-gray-700 whitespace-nowrap truncate">{schoolInfo.name}</h1>
-            <p className="text-sm text-gray-500">SELAMAT DATANG, {userType === 'admin' ? 'ADMIN' : 'OPERATOR'}</p>
+            <h1 className="text-lg md:text-xl font-semibold text-gray-700 whitespace-nowrap truncate">{headerTitle}</h1>
+            <p className="text-sm text-gray-500">SELAMAT DATANG, {userType === 'admin' ? 'ADMIN' : `OPERATOR ${activeSchoolInfo.name}`}</p>
           </div>
           <button onClick={onLogout} className="md:hidden text-gray-600 hover:text-brand-blue">
             <ArrowLeftOnRectangleIcon className="w-6 h-6" />
@@ -179,7 +198,7 @@ const AdminDashboardHome: React.FC<{setCurrentPage: (page: Page) => void}> = ({s
                     <AcademicCapIcon className="w-12 h-12 text-blue-500" />
                     <div className="ml-4">
                         <h3 className="text-xl font-semibold text-gray-800">Data Guru</h3>
-                        <p className="text-gray-500">Kelola guru dan mata pelajaran yang diampu.</p>
+                        <p className="text-gray-500">Kelola data guru untuk semua sekolah.</p>
                     </div>
                 </div>
             </div>
@@ -187,8 +206,8 @@ const AdminDashboardHome: React.FC<{setCurrentPage: (page: Page) => void}> = ({s
                 <div className="flex items-center">
                     <BuildingOfficeIcon className="w-12 h-12 text-yellow-500" />
                     <div className="ml-4">
-                        <h3 className="text-xl font-semibold text-gray-800">Data Sekolah</h3>
-                        <p className="text-gray-500">Pilih sekolah aktif & kelola informasi detailnya.</p>
+                        <h3 className="text-xl font-semibold text-gray-800">Profil & Sekolah</h3>
+                        <p className="text-gray-500">Kelola profil admin dan daftar sekolah.</p>
                     </div>
                 </div>
             </div>
@@ -290,7 +309,7 @@ type OperatorFeedback = {
     type: 'success' | 'error';
 };
 
-const OperatorSettings: React.FC<{ username: string, schoolInfo: SchoolInfo }> = ({ username, schoolInfo }) => {
+const OperatorSettings: React.FC<{ username: string, activeSchoolInfo: SchoolInfo }> = ({ username, activeSchoolInfo }) => {
     const [oldPassword, setOldPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -315,7 +334,7 @@ const OperatorSettings: React.FC<{ username: string, schoolInfo: SchoolInfo }> =
         }
 
         try {
-            const operator = await dataService.getOperatorUserByUsernameAndSchool(username, schoolInfo.name);
+            const operator = await dataService.getOperatorUserByUsernameAndSchool(username, activeSchoolInfo.name);
             if (!operator) {
                 showFeedback('Gagal menemukan data operator.', 'error');
                 return;
